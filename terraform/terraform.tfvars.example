@@ -1,0 +1,13 @@
+# New Relic MCP APIM Proxy Configuration
+
+environment          = "dev"
+apim_name            = "apim-amnhealthcare-dev"
+apim_resource_group  = "rg-apim-dev"
+
+# Entra app registration for MCP access (create first)
+newrelic_mcp_app_id  = "your-app-registration-id-here"
+
+# New Relic API key from Key Vault: co-wus2-newrelic-kv-p01
+# Key name: NewRelic-AMNHealthcare-AMN-Ops-AI-Plugin-Marketplace
+# Format: NRAK-...
+newrelic_api_key     = "NRAK-XXXXXXXXXXXXXXXXXX"

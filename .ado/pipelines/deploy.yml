@@ -1,0 +1,198 @@
+name: New Relic MCP APIM Proxy
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - terraform/**
+      - apim-policy-newrelic-mcp.xml
+      - .ado/pipelines/deploy.yml
+
+pr:
+  branches:
+    include:
+      - main
+
+parameters:
+  - name: environment
+    displayName: Environment
+    type: string
+    default: dev
+    values:
+      - dev
+      - staging
+      - prod
+
+  - name: action
+    displayName: Action
+    type: string
+    default: plan
+    values:
+      - plan
+      - apply
+      - destroy
+
+variables:
+  - name: terraformVersion
+    value: '1.6.0'
+  - name: workingDirectory
+    value: '$(System.DefaultWorkingDirectory)/terraform'
+
+stages:
+  - stage: Terraform_${{ parameters.action }}
+    displayName: 'Terraform ${{ parameters.action }} - ${{ parameters.environment }}'
+    jobs:
+      - job: Terraform
+        displayName: 'Run Terraform'
+        pool:
+          vmImage: 'ubuntu-latest'
+
+        steps:
+          - checkout: self
+
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: $(terraformVersion)
+
+          - task: Bash@3
+            displayName: 'Terraform Init'
+            inputs:
+              targetType: 'inline'
+              workingDirectory: $(workingDirectory)
+              script: |
+                terraform init \
+                  -backend-config="resource_group_name=$(TF_STATE_RESOURCE_GROUP)" \
+                  -backend-config="storage_account_name=$(TF_STATE_STORAGE_ACCOUNT)" \
+                  -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+                  -backend-config="key=newrelic-mcp-${{ parameters.environment }}.tfstate"
+            env:
+              ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+              ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+              ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+              ARM_TENANT_ID: $(ARM_TENANT_ID)
+
+          - task: Bash@3
+            displayName: 'Terraform Plan'
+            condition: or(eq('${{ parameters.action }}', 'plan'), eq('${{ parameters.action }}', 'apply'))
+            inputs:
+              targetType: 'inline'
+              workingDirectory: $(workingDirectory)
+              script: |
+                terraform plan \
+                  -var="environment=${{ parameters.environment }}" \
+                  -var="apim_name=$(APIM_NAME)" \
+                  -var="apim_resource_group=$(APIM_RESOURCE_GROUP)" \
+                  -var="newrelic_mcp_app_id=$(NEWRELIC_MCP_APP_ID)" \
+                  -var="newrelic_api_key=$(NEWRELIC_API_KEY)" \
+                  -out=tfplan
+            env:
+              ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+              ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+              ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+              ARM_TENANT_ID: $(ARM_TENANT_ID)
+
+          - task: Bash@3
+            displayName: 'Terraform Apply'
+            condition: and(succeeded(), eq('${{ parameters.action }}', 'apply'))
+            inputs:
+              targetType: 'inline'
+              workingDirectory: $(workingDirectory)
+              script: |
+                terraform apply -auto-approve tfplan
+            env:
+              ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+              ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+              ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+              ARM_TENANT_ID: $(ARM_TENANT_ID)
+
+          - task: Bash@3
+            displayName: 'Terraform Output'
+            condition: and(succeeded(), eq('${{ parameters.action }}', 'apply'))
+            inputs:
+              targetType: 'inline'
+              workingDirectory: $(workingDirectory)
+              script: |
+                terraform output -json > $(Build.ArtifactStagingDirectory)/terraform-outputs.json
+                cat $(Build.ArtifactStagingDirectory)/terraform-outputs.json
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Terraform Outputs'
+            condition: and(succeeded(), eq('${{ parameters.action }}', 'apply'))
+            inputs:
+              pathToPublish: '$(Build.ArtifactStagingDirectory)'
+              artifactName: 'terraform-outputs-${{ parameters.environment }}'
+
+  - stage: ApplyPolicy_${{ parameters.environment }}
+    displayName: 'Apply APIM Policy'
+    dependsOn: Terraform_${{ parameters.action }}
+    condition: and(succeeded(), eq('${{ parameters.action }}', 'apply'))
+    jobs:
+      - job: ApplyPolicy
+        displayName: 'Apply APIM Policy'
+        pool:
+          vmImage: 'ubuntu-latest'
+
+        steps:
+          - checkout: self
+
+          - task: DownloadBuildArtifacts@1
+            inputs:
+              buildType: 'current'
+              downloadType: 'single'
+              artifactName: 'terraform-outputs-${{ parameters.environment }}'
+              downloadPath: '$(System.ArtifactsDirectory)'
+
+          - task: AzureCLI@2
+            displayName: 'Apply APIM Policy'
+            inputs:
+              azureSubscription: 'Azure-MCP-ServiceConnection'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                set -e
+
+                APIM_NAME="$(APIM_NAME)"
+                APIM_RG="$(APIM_RESOURCE_GROUP)"
+                POLICY_FILE="$(System.DefaultWorkingDirectory)/apim-policy-newrelic-mcp.xml"
+
+                # Get API ID from terraform outputs
+                API_ID=$(jq -r '.api_id.value' $(System.ArtifactsDirectory)/terraform-outputs-${{ parameters.environment }}/terraform-outputs.json)
+
+                echo "Applying APIM policy to API: $API_ID"
+
+                az apim api policy create \
+                  --resource-group $APIM_RG \
+                  --service-name $APIM_NAME \
+                  --api-id $API_ID \
+                  --xml-content @$POLICY_FILE
+
+                echo "✅ APIM policy applied successfully"
+
+          - task: AzureCLI@2
+            displayName: 'Test MCP Endpoint'
+            inputs:
+              azureSubscription: 'Azure-MCP-ServiceConnection'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                set -e
+
+                # Get endpoint from terraform outputs
+                ENDPOINT=$(jq -r '.apim_mcp_endpoint.value' $(System.ArtifactsDirectory)/terraform-outputs-${{ parameters.environment }}/terraform-outputs.json)
+
+                echo "Testing endpoint: $ENDPOINT"
+
+                # Get token
+                TOKEN=$(az account get-access-token --resource api://$(NEWRELIC_MCP_APP_ID) --query accessToken -o tsv)
+
+                # Test capabilities/list
+                curl -f -X POST "$ENDPOINT" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d '{"jsonrpc":"2.0","method":"capabilities/list","id":1}' \
+                  || (echo "ERROR: MCP endpoint test failed" && exit 1)
+
+                echo "✅ MCP endpoint test passed"

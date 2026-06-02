@@ -1,0 +1,25 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schema/mcp.json",
+  "mcpServers": {
+    "newrelic": {
+      "type": "http",
+      "url": "https://api.amnhealthcare.io/mcp/newrelic/dev/mcp/",
+      "auth": {
+        "type": "bearer",
+        "token": {
+          "command": "az",
+          "args": [
+            "account",
+            "get-access-token",
+            "--resource",
+            "api://newrelic-mcp-reader",
+            "--query",
+            "accessToken",
+            "-o",
+            "tsv"
+          ]
+        }
+      }
+    }
+  }
+}
