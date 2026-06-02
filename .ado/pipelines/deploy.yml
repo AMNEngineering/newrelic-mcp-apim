@@ -40,6 +40,13 @@ variables:
   - name: workingDirectory
     value: '$(System.DefaultWorkingDirectory)/terraform'
 
+  # Variable group contains:
+  # - ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_SUBSCRIPTION_ID, ARM_TENANT_ID
+  # - TF_STATE_RESOURCE_GROUP, TF_STATE_STORAGE_ACCOUNT, TF_STATE_CONTAINER
+  # - APIM_NAME, APIM_RESOURCE_GROUP
+  # - NEWRELIC_MCP_APP_ID, NEWRELIC_API_KEY (secret)
+  - group: newrelic-mcp-apim-vars
+
 stages:
   - stage: Terraform_${{ parameters.action }}
     displayName: 'Terraform ${{ parameters.action }} - ${{ parameters.environment }}'

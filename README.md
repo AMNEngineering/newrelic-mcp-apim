@@ -32,54 +32,88 @@ Developer (Claude Code)
 
 ## Deployment
 
-### Prerequisites
+### Automated Setup (Recommended)
 
-1. **Entra App Registration:**
-   - Create app with identifier URI: `api://newrelic-mcp-reader`
-   - Note the application (client) ID
+Use the automated setup script to create the variable group:
 
-2. **New Relic API Key:**
-   - Retrieve from Key Vault: `co-wus2-newrelic-kv-p01`
-   - Secret name: `NewRelic-AMNHealthcare-AMN-Ops-AI-Plugin-Marketplace`
-   - Format: `NRAK-...`
+**Bash (Linux/Mac/WSL):**
+```bash
+# Login to Azure
+az login
 
-3. **ADO Variable Group:**
-   - Create variable group in CloudOps project
-   - Add variables:
-     - `ARM_CLIENT_ID` - Service principal ID
-     - `ARM_CLIENT_SECRET` - Service principal secret (secret)
-     - `ARM_SUBSCRIPTION_ID` - Target subscription
-     - `ARM_TENANT_ID` - AMN tenant ID
-     - `TF_STATE_RESOURCE_GROUP` - Terraform state RG
-     - `TF_STATE_STORAGE_ACCOUNT` - Terraform state storage
-     - `TF_STATE_CONTAINER` - Terraform state container
-     - `APIM_NAME` - Target APIM instance name (e.g., `apim-amnhealthcare-dev`)
-     - `APIM_RESOURCE_GROUP` - APIM resource group
-     - `NEWRELIC_MCP_APP_ID` - App registration ID from step 1
-     - `NEWRELIC_API_KEY` - New Relic API key (secret)
+# Install Azure DevOps extension
+az extension add --name azure-devops
 
-### Pipeline Deployment
+# Run setup script
+./.ado/scripts/create-variable-group.sh
+```
 
-1. **Create ADO Pipeline:**
+**PowerShell (Windows):**
+```powershell
+# Login to Azure
+az login
+
+# Install Azure DevOps extension
+az extension add --name azure-devops
+
+# Run setup script
+.\.ado\scripts\create-variable-group.ps1
+```
+
+The script will:
+- ✅ Create or find Entra app registration `api://newrelic-mcp-reader`
+- ✅ Retrieve New Relic API key from Key Vault
+- ✅ Create ADO variable group `newrelic-mcp-apim-vars`
+- ✅ Prompt for service principal and APIM configuration
+- ✅ Authorize variable group for pipeline use
+
+### Manual Setup
+
+See detailed manual setup instructions: [.ado/SETUP.md](.ado/SETUP.md)
+
+### Create ADO Pipeline
+
+1. **Create Pipeline:**
    - Go to Azure DevOps → CloudOps project
    - Pipelines → New Pipeline
    - Choose GitHub → Select `AMNEngineering/newrelic-mcp-apim`
    - Select existing YAML: `.ado/pipelines/deploy.yml`
-   - Link variable group created in prerequisites
+   - Variable group automatically linked (if using automated setup)
+   - Save (don't run yet)
 
-2. **Run Pipeline:**
-   - Select environment: `dev`, `staging`, or `prod`
-   - Select action: `plan` (first run) or `apply` (deploy)
+2. **First Run (Plan):**
+   - Environment: `dev`
+   - Action: `plan`
+   - Review Terraform plan output
+
+3. **Deploy (Apply):**
+   - Environment: `dev`
+   - Action: `apply`
    - Pipeline will:
-     - Run `terraform plan/apply`
+     - Run `terraform apply`
      - Apply APIM policy
      - Test endpoint
-     - Publish outputs
+     - Output endpoint URL
 
-3. **Verify Deployment:**
+4. **Verify Deployment:**
    - Check pipeline output for endpoint URL
    - Review APIM portal for API and policy
-   - Test with: `az account get-access-token --resource api://newrelic-mcp-reader`
+   - Test endpoint (see below)
+
+### Test Deployment
+
+```bash
+# Get token
+TOKEN=$(az account get-access-token --resource api://newrelic-mcp-reader --query accessToken -o tsv)
+
+# Test MCP endpoint
+curl -X POST "https://api.amnhealthcare.io/mcp/newrelic/dev/mcp/" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"capabilities/list","id":1}'
+```
+
+Expected response: MCP capabilities list with New Relic tools.
 
 ## Developer Setup
 
