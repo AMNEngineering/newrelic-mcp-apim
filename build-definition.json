@@ -1,0 +1,27 @@
+{
+  "name": "newrelic-mcp-apim",
+  "type": "build",
+  "quality": "definition",
+  "path": "\\",
+  "process": {
+    "type": 2,
+    "yamlFilename": ".ado/pipelines/deploy.yml"
+  },
+  "repository": {
+    "type": "GitHub",
+    "name": "AMNEngineering/newrelic-mcp-apim",
+    "url": "https://github.com/AMNEngineering/newrelic-mcp-apim.git",
+    "defaultBranch": "refs/heads/master",
+    "properties": {
+      "connectedServiceId": "9febc12d-b789-4b26-a944-a419b984d2d8",
+      "apiUrl": "https://api.github.com/repos/AMNEngineering/newrelic-mcp-apim",
+      "branchesUrl": "https://api.github.com/repos/AMNEngineering/newrelic-mcp-apim/branches",
+      "cloneUrl": "https://github.com/AMNEngineering/newrelic-mcp-apim.git",
+      "fullName": "AMNEngineering/newrelic-mcp-apim",
+      "refsUrl": "https://api.github.com/repos/AMNEngineering/newrelic-mcp-apim/git/refs"
+    }
+  },
+  "queue": {
+    "name": "Azure Pipelines"
+  }
+}
