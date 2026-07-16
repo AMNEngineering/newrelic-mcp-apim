@@ -1,205 +1,390 @@
-name: New Relic MCP APIM Proxy
+name: '1.0$(rev:.r)'
+
+# =================================================================================================
+# New Relic MCP behind APIM — deploy pipeline.
+# Modeled on the sfdc-read-mcp-apim gold standard: Build -> Plan -> Apply (gated) -> Verify,
+# per environment, on the shared CloudOps service connections into the shared hub APIM.
+# Prod stages stay commented out until CAB approval.
+# =================================================================================================
 
 trigger:
   branches:
     include:
       - main
-  paths:
-    include:
-      - terraform/**
-      - apim-policy-newrelic-mcp.xml
-      - .ado/pipelines/deploy.yml
+      - master
 
 pr:
   branches:
     include:
       - main
+      - master
 
-parameters:
-  - name: environment
-    displayName: Environment
-    type: string
-    default: dev
-    values:
-      - dev
-      - staging
-      - prod
-
-  - name: action
-    displayName: Action
-    type: string
-    default: plan
-    values:
-      - plan
-      - apply
-      - destroy
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: Terraform/amn-az-tf-common-pipelines
+      ref: refs/tags/v2.1.8
 
 variables:
-  - name: terraformVersion
-    value: '1.6.0'
-  - name: workingDirectory
-    value: '$(System.DefaultWorkingDirectory)/terraform'
-
-  # Variable group contains:
-  # - ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_SUBSCRIPTION_ID, ARM_TENANT_ID
-  # - TF_STATE_RESOURCE_GROUP, TF_STATE_STORAGE_ACCOUNT, TF_STATE_CONTAINER
-  # - APIM_NAME, APIM_RESOURCE_GROUP
-  # - NEWRELIC_MCP_APP_ID, NEWRELIC_API_KEY (secret)
-  - group: newrelic-mcp-apim-vars
+  ServiceConnection_Lower: 'ADO-AMNEngineering-CloudOps-lower-AMN-IPS-ServiceConnection'
+  ServiceConnection_Upper: 'ADO-AMNEngineering-CloudOps-Upper-AMN-IPS-AutomaticSC'
+  StateStorageAccountSubscriptionId: '43c5a646-c00c-4c59-a332-df854c5dd08c'
+  StateStorageAccountResourceGroup: 'co-wus2-tfstate-rg-p01'
+  StateStorageAccount_Lower: 'amncowus2tfstatesad01'
+  StateStorageAccount_Upper: 'amncowus2tfstatesap01'
+  VerticalName: 'newrelic'
+  PoolName: 'Azure Pipelines'
+  system.debug: 'true'
 
 stages:
-  - stage: Terraform_${{ parameters.action }}
-    displayName: 'Terraform ${{ parameters.action }} - ${{ parameters.environment }}'
+  - stage: Build
+    displayName: "Build"
+    pool:
+      vmImage: 'ubuntu-latest'
     jobs:
-      - job: Terraform
-        displayName: 'Run Terraform'
-        pool:
-          vmImage: 'ubuntu-latest'
-
+      - job: Checkout
+        displayName: 'Checkout Code'
         steps:
           - checkout: self
+            clean: true
 
-          - task: TerraformInstaller@1
-            displayName: 'Install Terraform'
+  # ------------------------------------------------------------------------------------ dev plan
+  - stage: dev_plan
+    displayName: "Terraform_Plan_dev"
+    dependsOn: Build
+    pool:
+      vmImage: 'ubuntu-latest'
+    jobs:
+      - job: Plan_Configuration
+        displayName: "Plan Configuration"
+        steps:
+          - checkout: self
+            clean: true
+          - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@1
+            displayName: "Terraform Install"
             inputs:
-              terraformVersion: $(terraformVersion)
-
-          - task: Bash@3
-            displayName: 'Terraform Init'
+              terraformVersion: '1.12.0'
+          - task: AzureCLI@2
+            displayName: "Terraform Init"
             inputs:
-              targetType: 'inline'
-              workingDirectory: $(workingDirectory)
-              script: |
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              azureSubscription: '$(ServiceConnection_Lower)'
+              inlineScript: |
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_CLIENT_SECRET=$servicePrincipalKey
+                export ARM_TENANT_ID=$tenantId
+                cd infrastructure
                 terraform init \
-                  -backend-config="resource_group_name=$(TF_STATE_RESOURCE_GROUP)" \
-                  -backend-config="storage_account_name=$(TF_STATE_STORAGE_ACCOUNT)" \
-                  -backend-config="container_name=$(TF_STATE_CONTAINER)" \
-                  -backend-config="key=newrelic-mcp-${{ parameters.environment }}.tfstate"
-            env:
-              ARM_CLIENT_ID: $(ARM_CLIENT_ID)
-              ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-              ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
-              ARM_TENANT_ID: $(ARM_TENANT_ID)
-
-          - task: Bash@3
-            displayName: 'Terraform Plan'
-            condition: or(eq('${{ parameters.action }}', 'plan'), eq('${{ parameters.action }}', 'apply'))
+                  -backend-config="storage_account_name=$(StateStorageAccount_Lower)" \
+                  -backend-config="container_name=$(VerticalName)" \
+                  -backend-config="key=$(VerticalName)-dev.tfstate" \
+                  -backend-config="resource_group_name=$(StateStorageAccountResourceGroup)" \
+                  -backend-config="subscription_id=$(StateStorageAccountSubscriptionId)"
+          - task: AzureCLI@2
+            displayName: "Terraform Plan"
             inputs:
-              targetType: 'inline'
-              workingDirectory: $(workingDirectory)
-              script: |
-                terraform plan \
-                  -var="environment=${{ parameters.environment }}" \
-                  -var="apim_name=$(APIM_NAME)" \
-                  -var="apim_resource_group=$(APIM_RESOURCE_GROUP)" \
-                  -var="newrelic_mcp_app_id=$(NEWRELIC_MCP_APP_ID)" \
-                  -var="newrelic_api_key=$(NEWRELIC_API_KEY)" \
-                  -out=tfplan
-            env:
-              ARM_CLIENT_ID: $(ARM_CLIENT_ID)
-              ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-              ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
-              ARM_TENANT_ID: $(ARM_TENANT_ID)
-
-          - task: Bash@3
-            displayName: 'Terraform Apply'
-            condition: and(succeeded(), eq('${{ parameters.action }}', 'apply'))
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              azureSubscription: '$(ServiceConnection_Lower)'
+              inlineScript: |
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_CLIENT_SECRET=$servicePrincipalKey
+                export ARM_TENANT_ID=$tenantId
+                cd infrastructure
+                terraform plan -input=false -var-file="environments/dev.tfvars" -out=$(Build.ArtifactStagingDirectory)/dev_plan
+                PLAN_EXIT=$?
+                echo "Terraform plan exit code: $PLAN_EXIT"
+                if [ $PLAN_EXIT -eq 0 ] || [ $PLAN_EXIT -eq 2 ]; then
+                  echo "##[section]Plan succeeded (exit code $PLAN_EXIT)"; exit 0
+                else
+                  echo "##[error]Plan failed with exit code $PLAN_EXIT"; exit $PLAN_EXIT
+                fi
+          - task: PublishPipelineArtifact@1
+            displayName: "Publish Terraform Plan"
             inputs:
-              targetType: 'inline'
-              workingDirectory: $(workingDirectory)
-              script: |
-                terraform apply -auto-approve tfplan
-            env:
-              ARM_CLIENT_ID: $(ARM_CLIENT_ID)
-              ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
-              ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
-              ARM_TENANT_ID: $(ARM_TENANT_ID)
+              targetPath: '$(Build.ArtifactStagingDirectory)/dev_plan'
+              artifact: 'TF_Plan_Artifact_dev'
 
-          - task: Bash@3
-            displayName: 'Terraform Output'
-            condition: and(succeeded(), eq('${{ parameters.action }}', 'apply'))
-            inputs:
-              targetType: 'inline'
-              workingDirectory: $(workingDirectory)
-              script: |
-                terraform output -json > $(Build.ArtifactStagingDirectory)/terraform-outputs.json
-                cat $(Build.ArtifactStagingDirectory)/terraform-outputs.json
-
-          - task: PublishBuildArtifacts@1
-            displayName: 'Publish Terraform Outputs'
-            condition: and(succeeded(), eq('${{ parameters.action }}', 'apply'))
-            inputs:
-              pathToPublish: '$(Build.ArtifactStagingDirectory)'
-              artifactName: 'terraform-outputs-${{ parameters.environment }}'
-
-  - stage: ApplyPolicy_${{ parameters.environment }}
-    displayName: 'Apply APIM Policy'
-    dependsOn: Terraform_${{ parameters.action }}
-    condition: and(succeeded(), eq('${{ parameters.action }}', 'apply'))
+  # ----------------------------------------------------------------------------------- dev apply
+  - stage: dev_apply
+    displayName: "Terraform_Apply_dev"
+    dependsOn: dev_plan
+    condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq(variables['Build.SourceBranch'], 'refs/heads/master')))
+    pool:
+      vmImage: 'ubuntu-latest'
     jobs:
-      - job: ApplyPolicy
-        displayName: 'Apply APIM Policy'
-        pool:
-          vmImage: 'ubuntu-latest'
+      - deployment: Apply_Configuration
+        displayName: "Apply Configuration"
+        environment: 'newrelic-mcp-dev'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  clean: true
+                - task: DownloadPipelineArtifact@2
+                  displayName: "Download Terraform Plan"
+                  inputs:
+                    artifact: 'TF_Plan_Artifact_dev'
+                    path: '$(Build.ArtifactStagingDirectory)'
+                - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@1
+                  displayName: "Terraform Install"
+                  inputs:
+                    terraformVersion: '1.12.0'
+                - task: AzureCLI@2
+                  displayName: "Terraform Init"
+                  inputs:
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    addSpnToEnvironment: true
+                    azureSubscription: '$(ServiceConnection_Lower)'
+                    inlineScript: |
+                      export ARM_CLIENT_ID=$servicePrincipalId
+                      export ARM_CLIENT_SECRET=$servicePrincipalKey
+                      export ARM_TENANT_ID=$tenantId
+                      cd infrastructure
+                      terraform init \
+                        -backend-config="storage_account_name=$(StateStorageAccount_Lower)" \
+                        -backend-config="container_name=$(VerticalName)" \
+                        -backend-config="key=$(VerticalName)-dev.tfstate" \
+                        -backend-config="resource_group_name=$(StateStorageAccountResourceGroup)" \
+                        -backend-config="subscription_id=$(StateStorageAccountSubscriptionId)"
+                - task: AzureCLI@2
+                  displayName: "Terraform Apply"
+                  inputs:
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    addSpnToEnvironment: true
+                    azureSubscription: '$(ServiceConnection_Lower)'
+                    inlineScript: |
+                      export ARM_CLIENT_ID=$servicePrincipalId
+                      export ARM_CLIENT_SECRET=$servicePrincipalKey
+                      export ARM_TENANT_ID=$tenantId
+                      cd infrastructure
+                      terraform apply -input=false $(Build.ArtifactStagingDirectory)/dev_plan
 
+  # ---------------------------------------------------------------------------------- dev verify
+  - stage: dev_verify
+    displayName: "Verify_dev"
+    dependsOn: dev_apply
+    condition: succeeded()
+    pool:
+      vmImage: 'ubuntu-latest'
+    jobs:
+      - job: Verify_Deployment
+        displayName: "Verify Dev Deployment"
+        steps:
+          - task: AzureCLI@2
+            displayName: "Verify APIM API + policy + named values"
+            inputs:
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              azureSubscription: '$(ServiceConnection_Lower)'
+              inlineScript: |
+                APIM="amn-wus2-hub-apim-d02"; RG="amn-wus2-hub-rg-d01"
+                SUB="e764d23e-759d-4cd4-8b5f-27e4c703f6a8"
+                echo "Verifying API api-newrelic-dev on $APIM..."
+                API=$(az rest --method GET \
+                  --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.ApiManagement/service/$APIM/apis/api-newrelic-dev?api-version=2022-08-01" \
+                  --query "{name:name, path:properties.path}" -o json 2>&1)
+                if [ $? -ne 0 ]; then echo "##[error]API not found"; echo "$API"; exit 1; fi
+                echo "API: $API"
+                POLICY=$(az rest --method GET \
+                  --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.ApiManagement/service/$APIM/apis/api-newrelic-dev/policies/policy?api-version=2022-08-01&format=rawxml" \
+                  --query "properties.value" -o tsv 2>&1 || true)
+                for needle in "validate-azure-ad-token" "rate-limit-by-key"; do
+                  echo "$POLICY" | grep -q "$needle" && echo "  ok: $needle" || { echo "##[error]Policy missing $needle"; exit 1; }
+                done
+                echo "$POLICY" | grep -qi 'set-header name="Api-Key"' && echo "  ok: Api-Key injection" || { echo "##[error]Policy missing Api-Key injection"; exit 1; }
+                NV_COUNT=$(az rest --method GET \
+                  --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.ApiManagement/service/$APIM/namedValues?api-version=2022-08-01" \
+                  --query "length(value[?starts_with(properties.displayName, 'NewRelic')])" -o tsv 2>&1)
+                echo "NewRelic named values: $NV_COUNT"
+                [ "$NV_COUNT" -ge 2 ] && echo "##[section]Dev verify PASSED" || { echo "##[error]Expected >=2 NewRelic named values"; exit 1; }
+
+  # ------------------------------------------------------------------------------------ int plan
+  - stage: int_plan
+    displayName: "Terraform_Plan_int"
+    dependsOn: dev_verify
+    pool:
+      vmImage: 'ubuntu-latest'
+    jobs:
+      - job: Plan_Configuration
+        displayName: "Plan Configuration"
         steps:
           - checkout: self
-
-          - task: DownloadBuildArtifacts@1
+            clean: true
+          - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@1
+            displayName: "Terraform Install"
             inputs:
-              buildType: 'current'
-              downloadType: 'single'
-              artifactName: 'terraform-outputs-${{ parameters.environment }}'
-              downloadPath: '$(System.ArtifactsDirectory)'
-
+              terraformVersion: '1.12.0'
           - task: AzureCLI@2
-            displayName: 'Apply APIM Policy'
+            displayName: "Terraform Init"
             inputs:
-              azureSubscription: 'Azure-MCP-ServiceConnection'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              azureSubscription: '$(ServiceConnection_Upper)'
               inlineScript: |
-                set -e
-
-                APIM_NAME="$(APIM_NAME)"
-                APIM_RG="$(APIM_RESOURCE_GROUP)"
-                POLICY_FILE="$(System.DefaultWorkingDirectory)/apim-policy-newrelic-mcp.xml"
-
-                # Get API ID from terraform outputs
-                API_ID=$(jq -r '.api_id.value' $(System.ArtifactsDirectory)/terraform-outputs-${{ parameters.environment }}/terraform-outputs.json)
-
-                echo "Applying APIM policy to API: $API_ID"
-
-                az apim api policy create \
-                  --resource-group $APIM_RG \
-                  --service-name $APIM_NAME \
-                  --api-id $API_ID \
-                  --xml-content @$POLICY_FILE
-
-                echo "✅ APIM policy applied successfully"
-
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_CLIENT_SECRET=$servicePrincipalKey
+                export ARM_TENANT_ID=$tenantId
+                cd infrastructure
+                terraform init \
+                  -backend-config="storage_account_name=$(StateStorageAccount_Upper)" \
+                  -backend-config="container_name=$(VerticalName)" \
+                  -backend-config="key=$(VerticalName)-int.tfstate" \
+                  -backend-config="resource_group_name=$(StateStorageAccountResourceGroup)" \
+                  -backend-config="subscription_id=$(StateStorageAccountSubscriptionId)"
           - task: AzureCLI@2
-            displayName: 'Test MCP Endpoint'
+            displayName: "Terraform Plan"
             inputs:
-              azureSubscription: 'Azure-MCP-ServiceConnection'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
+              addSpnToEnvironment: true
+              azureSubscription: '$(ServiceConnection_Upper)'
               inlineScript: |
-                set -e
+                export ARM_CLIENT_ID=$servicePrincipalId
+                export ARM_CLIENT_SECRET=$servicePrincipalKey
+                export ARM_TENANT_ID=$tenantId
+                cd infrastructure
+                terraform plan -input=false -var-file="environments/int.tfvars" -out=$(Build.ArtifactStagingDirectory)/int_plan
+                PLAN_EXIT=$?
+                echo "Terraform plan exit code: $PLAN_EXIT"
+                if [ $PLAN_EXIT -eq 0 ] || [ $PLAN_EXIT -eq 2 ]; then
+                  echo "##[section]Plan succeeded (exit code $PLAN_EXIT)"; exit 0
+                else
+                  echo "##[error]Plan failed with exit code $PLAN_EXIT"; exit $PLAN_EXIT
+                fi
+          - task: PublishPipelineArtifact@1
+            displayName: "Publish Terraform Plan"
+            inputs:
+              targetPath: '$(Build.ArtifactStagingDirectory)/int_plan'
+              artifact: 'TF_Plan_Artifact_int'
 
-                # Get endpoint from terraform outputs
-                ENDPOINT=$(jq -r '.apim_mcp_endpoint.value' $(System.ArtifactsDirectory)/terraform-outputs-${{ parameters.environment }}/terraform-outputs.json)
+  # ----------------------------------------------------------------------------------- int apply
+  - stage: int_apply
+    displayName: "Terraform_Apply_int"
+    dependsOn: int_plan
+    condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq(variables['Build.SourceBranch'], 'refs/heads/master')))
+    pool:
+      vmImage: 'ubuntu-latest'
+    jobs:
+      - job: WaitForApproval
+        displayName: "Wait for Int Apply Approval (CAB gate)"
+        pool: server
+        timeoutInMinutes: 1440
+        steps:
+          - task: ManualValidation@0
+            displayName: "Manual approval before int apply"
+            inputs:
+              notifyUsers: 'bart.elia@amnhealthcare.com'
+              instructions: |
+                Review the Terraform plan artifact "TF_Plan_Artifact_int" before approving.
+                Resume to apply changes to int APIM (prod subscription), Reject to cancel.
+              onTimeout: 'reject'
+      - deployment: Apply_Configuration
+        displayName: "Apply Configuration"
+        dependsOn: WaitForApproval
+        environment: 'newrelic-mcp-int'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  clean: true
+                - task: DownloadPipelineArtifact@2
+                  displayName: "Download Terraform Plan"
+                  inputs:
+                    artifact: 'TF_Plan_Artifact_int'
+                    path: '$(Build.ArtifactStagingDirectory)'
+                - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@1
+                  displayName: "Terraform Install"
+                  inputs:
+                    terraformVersion: '1.12.0'
+                - task: AzureCLI@2
+                  displayName: "Terraform Init"
+                  inputs:
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    addSpnToEnvironment: true
+                    azureSubscription: '$(ServiceConnection_Upper)'
+                    inlineScript: |
+                      export ARM_CLIENT_ID=$servicePrincipalId
+                      export ARM_CLIENT_SECRET=$servicePrincipalKey
+                      export ARM_TENANT_ID=$tenantId
+                      cd infrastructure
+                      terraform init \
+                        -backend-config="storage_account_name=$(StateStorageAccount_Upper)" \
+                        -backend-config="container_name=$(VerticalName)" \
+                        -backend-config="key=$(VerticalName)-int.tfstate" \
+                        -backend-config="resource_group_name=$(StateStorageAccountResourceGroup)" \
+                        -backend-config="subscription_id=$(StateStorageAccountSubscriptionId)"
+                - task: AzureCLI@2
+                  displayName: "Terraform Apply"
+                  inputs:
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    addSpnToEnvironment: true
+                    azureSubscription: '$(ServiceConnection_Upper)'
+                    inlineScript: |
+                      export ARM_CLIENT_ID=$servicePrincipalId
+                      export ARM_CLIENT_SECRET=$servicePrincipalKey
+                      export ARM_TENANT_ID=$tenantId
+                      cd infrastructure
+                      terraform apply -input=false $(Build.ArtifactStagingDirectory)/int_plan
 
-                echo "Testing endpoint: $ENDPOINT"
+  # ---------------------------------------------------------------------------------- int verify
+  - stage: int_verify
+    displayName: "Verify_int"
+    dependsOn: int_apply
+    condition: succeeded()
+    pool:
+      vmImage: 'ubuntu-latest'
+    jobs:
+      - job: Verify_Deployment
+        displayName: "Verify Int Deployment"
+        steps:
+          - checkout: self
+            clean: true
+          - task: AzureCLI@2
+            displayName: "Verify APIM API + policy + named values"
+            inputs:
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              azureSubscription: '$(ServiceConnection_Upper)'
+              inlineScript: |
+                APIM="amn-wus2-hub-apim-i02"; RG="amn-wus2-hub-rg-i01"
+                SUB="06ab2c80-382c-478f-bcd5-5e1afe984092"
+                az account set --subscription "$SUB"
+                API=$(az rest --method GET \
+                  --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.ApiManagement/service/$APIM/apis/api-newrelic-int?api-version=2022-08-01" \
+                  --query "{name:name, path:properties.path}" -o json 2>&1)
+                if [ $? -ne 0 ]; then echo "##[error]API not found"; echo "$API"; exit 1; fi
+                echo "API: $API"
+                POLICY=$(az rest --method GET \
+                  --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.ApiManagement/service/$APIM/apis/api-newrelic-int/policies/policy?api-version=2022-08-01&format=rawxml" \
+                  --query "properties.value" -o tsv 2>&1 || true)
+                for needle in "validate-azure-ad-token" "rate-limit-by-key"; do
+                  echo "$POLICY" | grep -q "$needle" && echo "  ok: $needle" || { echo "##[error]Policy missing $needle"; exit 1; }
+                done
+                echo "$POLICY" | grep -qi 'set-header name="Api-Key"' && echo "  ok: Api-Key injection" || { echo "##[error]Policy missing Api-Key injection"; exit 1; }
+                echo "##[section]Int verify PASSED"
+          # End-to-end smoke against the deployed gateway (WIF SPN, api:// audience).
+          - task: AzureCLI@2
+            displayName: "Smoke test (MCP initialize through the gateway)"
+            inputs:
+              scriptType: 'pscore'
+              scriptLocation: 'inlineScript'
+              azureSubscription: '$(ServiceConnection_Upper)'
+              inlineScript: |
+                ./test-harness/Invoke-ApimSmokeTest.ps1 -Environment int -TokenMode AzCli
 
-                # Get token
-                TOKEN=$(az account get-access-token --resource api://$(NEWRELIC_MCP_APP_ID) --query accessToken -o tsv)
-
-                # Test capabilities/list
-                curl -f -X POST "$ENDPOINT" \
-                  -H "Authorization: Bearer $TOKEN" \
-                  -H "Content-Type: application/json" \
-                  -d '{"jsonrpc":"2.0","method":"capabilities/list","id":1}' \
-                  || (echo "ERROR: MCP endpoint test failed" && exit 1)
-
-                echo "✅ MCP endpoint test passed"
+  # -------------------------------------------------------------------------------- prod (CAB) --
+  # Prod stages intentionally omitted until CAB approval. Mirror int, swapping:
+  #   apim amn-wus2-hub-apim-p02 / rg amn-wus2-hub-rg-p01, key=$(VerticalName)-prod.tfstate,
+  #   environments/prod.tfvars, ADO environment 'newrelic-mcp-production' with GRC+Ops approvers.

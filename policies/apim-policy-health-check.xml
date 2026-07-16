@@ -1,0 +1,29 @@
+<policies>
+    <inbound>
+        <!-- Health check - no authentication required - DO NOT call base to bypass JWT validation -->
+        <return-response>
+            <set-status code="200" reason="OK" />
+            <set-header name="Content-Type" exists-action="override">
+                <value>application/json</value>
+            </set-header>
+            <set-body>@{
+                return new JObject(
+                    new JProperty("status", "healthy"),
+                    new JProperty("service", "newrelic-mcp"),
+                    new JProperty("environment", "${environment}"),
+                    new JProperty("timestamp", DateTime.UtcNow.ToString("o")),
+                    new JProperty("version", "1.0.0")
+                ).ToString();
+            }</set-body>
+        </return-response>
+    </inbound>
+    <backend>
+        <!-- No backend needed -->
+    </backend>
+    <outbound>
+        <base />
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
+</policies>

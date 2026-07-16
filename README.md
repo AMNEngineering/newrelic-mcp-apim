@@ -1,147 +1,73 @@
-# New Relic MCP APIM Proxy
+# New Relic MCP behind APIM
 
-APIM proxy for New Relic MCP server that centralizes API key management and provides Entra ID authentication for Claude Code developers.
+APIM gateway that fronts New Relic's hosted MCP server so Claude Code developers
+authenticate with Entra ID and **never hold the New Relic key** — APIM injects it
+server-side. This moves the New Relic key off laptops into central Key Vault
+custody and governs the MCP (tool) data plane the same way the Claude Code model
+gateway governs the model plane.
+
+Built on AMN's gold-standard MCP-behind-APIM pattern
+([`sfdc-read-mcp-apim`](https://github.com/AMNEngineering/sfdc-read-mcp-apim)):
+Terraform + APIM policy + an ADO `Build → Plan → Apply (gated) → Verify` pipeline
+on the shared CloudOps service connections into the shared hub APIM.
+
+> This repo was modernized from an earlier prototype. See [`DECISIONS.md`](DECISIONS.md)
+> for the design decisions and how they differ from the prototype and from the
+> SFDC reference.
 
 ## Architecture
 
 ```
-Developer (Claude Code)
-  → Azure CLI JWT token (api://newrelic-mcp-reader)
-    → APIM Gateway
-      → Validates JWT
-      → Rate limits (300 calls/min per user)
-      → Strips JWT, injects NR API key
-      → Routes to mcp.newrelic.com
+Claude Code (MCP client)
+  │  Authorization: Bearer <Entra JWT>   (aud api://newrelic-mcp-reader, role MCP.Read)
+  ▼
+APIM  amn-wus2-hub-apim-{d02,i02,p02}
+  API: api-newrelic-{env}   path: mcp/newrelic/{env}   ops: /health, /mcp (POST/GET/DELETE)
+  │  inbound: validate-azure-ad-token (dual audience) + MCP.Read role gate
+  │  inbound: audit (x-apim-user-id, x-correlation-id)
+  │  inbound: rate-limit-by-key (per user OID)          ← flood/cost guardrail
+  │  inbound: strip Authorization, inject Api-Key {{nv-newrelic-mcp-api-key}}  ← from Key Vault
+  │  inbound: route + rewrite-uri /mcp/                 (no response buffering — streamable HTTP)
+  ▼
+https://mcp.newrelic.com/mcp/          New Relic hosted MCP (read-only)
 ```
 
-## Repository Structure
+## Layout
 
 ```
-.
-├── .ado/pipelines/
-│   └── deploy.yml              # ADO deployment pipeline
-├── terraform/
-│   ├── main.tf                 # APIM infrastructure
-│   └── terraform.tfvars.example
-├── apim-policy-newrelic-mcp.xml # APIM policy contract
-├── examples/
-│   └── client-config.json      # Developer .mcp.json template
-└── skill/
-    └── skill.md                # Updated New Relic skill docs
+infrastructure/          Terraform root (main/variables/outputs/backend)
+  environments/{dev,int,prod}.tfvars
+  modules/{named-values, backend-pool, mcp-api, mcp-policy, mcp-api-operation-policy}
+policies/
+  apim-policy-newrelic-mcp.xml   JWT + MCP.Read role + rate limit + Api-Key injection + routing
+  apim-policy-health-check.xml   /health, no JWT (liveness probe)
+.ado/pipelines/deploy.yml        Build → Plan → Apply (CAB-gated) → Verify, per env
+test-harness/Invoke-ApimSmokeTest.ps1   MCP initialize + tools/list + negative-auth smoke test
 ```
 
-## Deployment
+## Deploy (governed)
 
-### Automated Setup (Recommended)
+1. **Preflight** — confirm: the `newrelic-mcp-reader` Entra app id (fill it into the
+   env `*.tfvars`), the New Relic key secret name in `co-wus2-newrelic-kv-p01`, and
+   that APIM's managed identity has Key Vault `get`.
+2. **Register the pipeline** in the ADO *Cloud Operations* project — see
+   [`.ado/CREATE-PIPELINE-MANUAL.md`](.ado/CREATE-PIPELINE-MANUAL.md). Add approvers
+   to the `newrelic-mcp-int` ADO Environment (CAB gate).
+3. **Plan → Apply → Verify** via the pipeline (dev auto, int behind manual approval).
+4. **Verify** — the pipeline runs `test-harness/Invoke-ApimSmokeTest.ps1`; also
+   confirm the injected key's cross-subaccount reach (DECISIONS.md #1).
+5. **Client cutover** — point the observability plugin's `.mcp.json` at the gateway
+   URL (tracked in `amn-ops-ai-plugin-marketplace#170`). Merge only after Verify.
 
-Use the automated setup script to create the variable group:
+## Client config
 
-**Bash (Linux/Mac/WSL):**
-```bash
-# Login to Azure
-az login
-
-# Install Azure DevOps extension
-az extension add --name azure-devops
-
-# Run setup script
-./.ado/scripts/create-variable-group.sh
+```jsonc
+"newrelic": {
+  "type": "http",
+  "url": "https://<gateway>/mcp/newrelic/<env>/mcp",
+  "headers": { "Authorization": "Bearer ${NEWRELIC_MCP_TOKEN}" }
+}
 ```
-
-**PowerShell (Windows):**
-```powershell
-# Login to Azure
-az login
-
-# Install Azure DevOps extension
-az extension add --name azure-devops
-
-# Run setup script
-.\.ado\scripts\create-variable-group.ps1
-```
-
-The script will:
-- ✅ Create or find Entra app registration `api://newrelic-mcp-reader`
-- ✅ Retrieve New Relic API key from Key Vault
-- ✅ Create ADO variable group `newrelic-mcp-apim-vars`
-- ✅ Prompt for service principal and APIM configuration
-- ✅ Authorize variable group for pipeline use
-
-### Manual Setup
-
-See detailed manual setup instructions: [.ado/SETUP.md](.ado/SETUP.md)
-
-### Create ADO Pipeline
-
-1. **Create Pipeline:**
-   - Go to Azure DevOps → CloudOps project
-   - Pipelines → New Pipeline
-   - Choose GitHub → Select `AMNEngineering/newrelic-mcp-apim`
-   - Select existing YAML: `.ado/pipelines/deploy.yml`
-   - Variable group automatically linked (if using automated setup)
-   - Save (don't run yet)
-
-2. **First Run (Plan):**
-   - Environment: `dev`
-   - Action: `plan`
-   - Review Terraform plan output
-
-3. **Deploy (Apply):**
-   - Environment: `dev`
-   - Action: `apply`
-   - Pipeline will:
-     - Run `terraform apply`
-     - Apply APIM policy
-     - Test endpoint
-     - Output endpoint URL
-
-4. **Verify Deployment:**
-   - Check pipeline output for endpoint URL
-   - Review APIM portal for API and policy
-   - Test endpoint (see below)
-
-### Test Deployment
-
-```bash
-# Get token
-TOKEN=$(az account get-access-token --resource api://newrelic-mcp-reader --query accessToken -o tsv)
-
-# Test MCP endpoint
-curl -X POST "https://api.amnhealthcare.io/mcp/newrelic/dev/mcp/" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"capabilities/list","id":1}'
-```
-
-Expected response: MCP capabilities list with New Relic tools.
-
-## Developer Setup
-
-1. **Copy client config:**
-   ```bash
-   cp examples/client-config.json ~/.claude/.mcp.json
-   # or project-level: .mcp.json
-   ```
-
-2. **Login to Azure:**
-   ```bash
-   az login
-   ```
-
-3. **Test in Claude Code:**
-   ```
-   > Show me recent APIM logs from New Relic
-   ```
-
-## Security
-
-- **Client → APIM:** Entra JWT validation
-- **APIM → New Relic:** API key from named value (secret)
-- **Rate Limiting:** 300 calls/min per user
-- **Audit Logging:** APIM Analytics captures user identity, correlation ID, queries
-
-## Support
-
-- **Slack:** #cloudops-ai-platform
-- **Issues:** Contact CloudOps team
-- **New Relic Account:** Shared Services (6264783)
+The token is an Entra bearer for `api://newrelic-mcp-reader` (same acquisition
+pattern as the model gateway). The `NEW_RELIC_API_KEY` env var can be dropped
+from developer setup entirely.
