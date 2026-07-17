@@ -21,8 +21,10 @@ Design (decided 2026-07-16/17):
     no matter how many groups a user belongs to (SecurityGroup mode would drop the
     claim past ~200 groups).
 
-Seed the new group's membership with Sync-NewRelicMcpAccessGroup.ps1 (one-time
-import of everyone currently in the NewRelic_*_Notification-DL lists).
+Group membership is managed INDEPENDENTLY and deliberately: a person is added to
+this group specifically to grant New Relic MCP access. It is intentionally NOT
+derived from or tied to any other New Relic membership (e.g. the notification
+distribution lists) — add members explicitly.
 
 Safe to re-run: existing objects are reused and reconciled.
 
@@ -132,8 +134,10 @@ Write-Host "  newrelic_mcp_app_id     = `"$appId`""
 if ($groupOid) {
     Write-Host "  newrelic_user_group_oid = `"$groupOid`""
     Write-Host ""
-    Write-Host "Then seed membership (one-time):"
-    Write-Host "  ./Sync-NewRelicMcpAccessGroup.ps1 -TargetGroupOid $groupOid"
+    Write-Host "Then add members deliberately (this group is managed independently — do NOT"
+    Write-Host "tie it to other New Relic memberships):"
+    Write-Host "  Entra -> Groups -> $GroupName -> Members -> Add, or"
+    Write-Host "  az ad group member add --group $groupOid --member-id <userObjectId>"
 }
 else {
     Write-Host "  newrelic_user_group_oid = `"<re-run with -GroupName '<name>'>`""
