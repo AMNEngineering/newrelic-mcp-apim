@@ -15,8 +15,9 @@ tenant_id = "6232c2ec-fa42-4f27-92cd-787913fba489"
 # single app as dev/int; a dedicated prod app is optional future hardening.
 newrelic_mcp_app_id = "TBD-newrelic-mcp-PROD-APP-ID"
 
-# Authorized AD group (DECISION #2): membership gates access (groups claim). Group
-# name TBD — confirm the group + its Object ID before enabling prod.
+# Authorized AD group (DECISION #2): membership in
+# AZ_JobRole_Observability_NewRelicMcp_User gates access (groups claim). Confirm
+# the group + its Object ID before enabling prod.
 newrelic_user_group_oid = "TBD-newrelic-mcp-PROD-GROUP-OID"
 
 key_vault_name               = "co-wus2-newrelic-kv-p01"

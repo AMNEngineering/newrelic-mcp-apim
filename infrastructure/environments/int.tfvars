@@ -15,8 +15,9 @@ tenant_id = "6232c2ec-fa42-4f27-92cd-787913fba489"
 # A per-env split is optional future hardening.
 newrelic_mcp_app_id = "REPLACE-WITH-newrelic-mcp-APP-ID"
 
-# Authorized AD group (DECISION #2): membership gates access (groups claim), not an
-# app role. Group name TBD — create it, paste its Object ID here.
+# Authorized AD group (DECISION #2): membership in
+# AZ_JobRole_Observability_NewRelicMcp_User gates access (groups claim), not an
+# app role. Create it via the identity script, then paste its Object ID here.
 newrelic_user_group_oid = "REPLACE-WITH-newrelic-mcp-GROUP-OID"
 
 key_vault_name               = "co-wus2-newrelic-kv-p01"

@@ -15,9 +15,9 @@ tenant_id = "6232c2ec-fa42-4f27-92cd-787913fba489"
 # identity/New-NewRelicMcpAppReg.ps1 and paste the Application (client) ID here.
 newrelic_mcp_app_id = "REPLACE-WITH-newrelic-mcp-APP-ID"
 
-# Authorized AD group (DECISION #2): access is gated on membership in the dedicated
-# New Relic MCP group (groups claim), NOT an app role. Group name TBD — create it,
-# then paste its Object ID here.
+# Authorized AD group (DECISION #2): access is gated on membership in
+# AZ_JobRole_Observability_NewRelicMcp_User (groups claim), NOT an app role.
+# Create it with identity/New-NewRelicMcpAppReg.ps1, then paste its Object ID here.
 newrelic_user_group_oid = "REPLACE-WITH-newrelic-mcp-GROUP-OID"
 
 # New Relic User key via Key Vault reference (DECISION #1 — never inline in state).

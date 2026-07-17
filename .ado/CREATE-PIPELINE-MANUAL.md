@@ -25,7 +25,7 @@ register the pipeline through the portal.
   tfstate storage (`amncowus2tfstatesad01` lower / `amncowus2tfstatesap01` upper),
   RG `co-wus2-tfstate-rg-p01`. Create the `newrelic` container if it doesn't exist.
 - **Preflight inputs** — create the app reg + access group
-  (`identity/New-NewRelicMcpAppReg.ps1 -GroupName '<name>'`), fill
+  (`identity/New-NewRelicMcpAppReg.ps1`; group `AZ_JobRole_Observability_NewRelicMcp_User`), fill
   `newrelic_mcp_app_id` + `newrelic_user_group_oid` in the env `*.tfvars`, add
   developers to the group, and grant APIM's managed identity KV `get` on
   `co-wus2-newrelic-kv-p01` (secret `AMNHealthcare-NR-Terraform-UserKey`). See ../DECISIONS.md.

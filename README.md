@@ -47,8 +47,9 @@ test-harness/Invoke-ApimSmokeTest.ps1   MCP initialize + tools/list + negative-a
 
 ## Deploy (governed)
 
-1. **Preflight** — create identity: `identity/New-NewRelicMcpAppReg.ps1 -GroupName '<name>'`
-   (creates the app + access group, ApplicationGroup claims, assigns the group), then
+1. **Preflight** — create identity: `identity/New-NewRelicMcpAppReg.ps1`
+   (creates the app + `AZ_JobRole_Observability_NewRelicMcp_User` group, ApplicationGroup
+   claims, assigns the group), then
    seed membership with `identity/Sync-NewRelicMcpAccessGroup.ps1 -TargetGroupOid <oid>`
    (one-time import of all NR notification-DL members). Paste the app id + group OID
    into the env `*.tfvars`. Confirm the key secret (`AMNHealthcare-NR-Terraform-UserKey`

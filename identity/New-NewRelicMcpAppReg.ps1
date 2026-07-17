@@ -30,8 +30,8 @@ Safe to re-run: existing objects are reused and reconciled.
 App registration display name. Default 'AMN New Relic MCP'.
 
 .PARAMETER GroupName
-Access security group display name (name was TBD at authoring time). When provided,
-the group is created/found, made assignable, and assigned to the app.
+Access security group display name. Default 'AZ_JobRole_Observability_NewRelicMcp_User'.
+The group is created/found, made assignable, and assigned to the app.
 
 .PARAMETER CreateServicePrincipal
 Ensure an enterprise app (service principal) exists. Default: $true (required for
@@ -44,7 +44,7 @@ the ApplicationGroup assignment).
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [string]$DisplayName = 'AMN New Relic MCP',
-    [string]$GroupName = '',
+    [string]$GroupName = 'AZ_JobRole_Observability_NewRelicMcp_User',
     [bool]$CreateServicePrincipal = $true
 )
 

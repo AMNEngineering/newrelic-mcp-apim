@@ -7,7 +7,7 @@ Design decisions, resolved with Bart (Cloud Ops) on 2026-07-16.
 | # | Decision | Resolution |
 |---|----------|------------|
 | 1 | New Relic key storage | **Key Vault reference** to the existing NerdGraph **User key** — secret `AMNHealthcare-NR-Terraform-UserKey` in `co-wus2-newrelic-kv-p01` (confirmed present + enabled). New Relic has no read-only key type — a User key inherits its user's permissions — so read/write is enforced at the **skill layer**, not the credential. Never inline in TF state. |
-| 2 | Identity | **One NEW dedicated New Relic MCP app registration** (the JWT audience) covering **all** NR MCP actions — read AND write. New Relic does not distinguish read vs write at the token/User-key level, so neither does the app. **Access is gated by membership in ONE new dedicated AD security group** (a groups-claim check in the policy) — **not** an app role. Group name TBD. The app uses **`groupMembershipClaims = ApplicationGroup`** with that group assigned to it, so only that group emits in the token (overage-proof, works regardless of how many groups a user is in). There were **no existing NR security groups** to reuse — all 36 NewRelic_* groups are mail-only notification DLs — so the new group is **seeded once** with the union of those DLs' members (a snapshot, not a live sync) via `Sync-NewRelicMcpAccessGroup.ps1`. App + group created via `identity/New-NewRelicMcpAppReg.ps1`. Read/write is enforced strictly at the **marketplace + skill layer**. One app + one group across envs for the pilot; per-env split is optional future hardening. |
+| 2 | Identity | **One NEW dedicated New Relic MCP app registration** (the JWT audience) covering **all** NR MCP actions — read AND write. New Relic does not distinguish read vs write at the token/User-key level, so neither does the app. **Access is gated by membership in ONE new dedicated AD security group** (`AZ_JobRole_Observability_NewRelicMcp_User`, a groups-claim check in the policy) — **not** an app role. The app uses **`groupMembershipClaims = ApplicationGroup`** with that group assigned to it, so only that group emits in the token (overage-proof, works regardless of how many groups a user is in). There were **no existing NR security groups** to reuse — all 36 NewRelic_* groups are mail-only notification DLs — so the new group is **seeded once** with the union of those DLs' members (a snapshot, not a live sync) via `Sync-NewRelicMcpAccessGroup.ps1`. App + group created via `identity/New-NewRelicMcpAppReg.ps1`. Read/write is enforced strictly at the **marketplace + skill layer**. One app + one group across envs for the pilot; per-env split is optional future hardening. |
 | 3 | Rate limit | **Per-user `rate-limit-by-key`, default 300 calls / 60s.** Unlike the SFDC reference (which documents but does not implement a limit), New Relic has a real flood/cost vector — arbitrary NRQL — so we implement one. Tunable in `*.tfvars`. |
 | 4 | Write path (`newrelic-rw`) | **Read-only first.** The dedicated app (#2) already covers write, but write actions are gated at the skill layer; the actual write MCP host is provisioned separately via Terraform in the pipeline, staged for CAB approval, as a follow-on. |
 | 5 | Repo home | **This repo** (`newrelic-mcp-apim`), modernized in place onto the sfdc pattern. |
@@ -39,10 +39,10 @@ gold-standard pattern and the decisions above.
 - **#1 account reach** — the `…-Terraform-UserKey` service-user keys may be scoped
   narrower than a developer's laptop `NEW_RELIC_API_KEY`. Confirm cross-subaccount
   reach at Verify via `list_available_new_relic_accounts` through the gateway.
-- **#2 app id + group** — once the group name is decided, run
-  `identity/New-NewRelicMcpAppReg.ps1 -GroupName '<name>'` (needs app-admin): creates
-  the app, creates the security group, sets ApplicationGroup claims, and assigns the
-  group to the app. Then seed membership once with
+- **#2 app id + group** — run `identity/New-NewRelicMcpAppReg.ps1` (needs app-admin):
+  creates the app, creates the `AZ_JobRole_Observability_NewRelicMcp_User` security
+  group, sets ApplicationGroup claims, and assigns the group to the app. Then seed
+  membership once with
   `identity/Sync-NewRelicMcpAccessGroup.ps1 -TargetGroupOid <oid>` (imports all NR
   notification-DL members — snapshot, re-run to refresh). Paste the Application
   (client) ID → `newrelic_mcp_app_id` and the group Object ID → `newrelic_user_group_oid`
