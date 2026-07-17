@@ -4,10 +4,11 @@
   Rendered by Terraform templatefile(): $${...} placeholders are TF vars,
   {{...}} are APIM named values.
 
-  Flow: validate Entra JWT (dual audience) -> require MCP.Read app role ->
-  audit -> per-user rate limit -> strip client auth + inject New Relic key ->
-  route to New Relic's hosted MCP. New Relic uses a static Api-Key (no OAuth
-  token exchange), so this is much simpler than the Salesforce reference.
+  Flow: validate Entra JWT (dual audience + required groups claim = membership in
+  the dedicated New Relic MCP AD group) -> audit -> per-user rate limit -> strip
+  client auth + inject New Relic key -> route to New Relic's hosted MCP. New Relic
+  uses a static Api-Key (no OAuth token exchange), so this is much simpler than
+  the Salesforce reference.
 
   NO response buffering: MCP is streamable HTTP (chunked / text/event-stream),
   so the policy never reads the response body.
@@ -16,44 +17,26 @@
   <inbound>
     <base />
 
-    <!-- 1. Client authN: Entra JWT. Dual audience accepts both the api:// URI
-            and bare-GUID forms (some clients mint the bare-GUID audience). -->
+    <!-- 1. Client authN + authZ: Entra JWT with a required groups claim. Access
+            is gated by membership in the dedicated New Relic MCP AD group (OID in
+            nv-newrelic-user-group-oid) — NOT an app role. New Relic does not
+            distinguish read vs write at the token level, so group membership grants
+            access to the New Relic MCP; read/write is enforced at the marketplace +
+            skill layer, not here.
+            Dual audience accepts both the api:// URI and bare-GUID forms. -->
     <validate-azure-ad-token tenant-id="${tenant_id}" header-name="Authorization" failed-validation-httpcode="401">
       <audiences>
         <audience>api://{{newrelic-mcp-app-id}}</audience>
         <audience>{{newrelic-mcp-app-id}}</audience>
       </audiences>
+      <required-claims>
+        <claim name="groups" match="any">
+          <value>{{nv-newrelic-user-group-oid}}</value>
+        </claim>
+      </required-claims>
     </validate-azure-ad-token>
 
-    <!-- 2. Authorization: require the MCP.Access.Developer app role. New Relic
-            does not distinguish read vs write at the token level, so this single
-            role grants access to the New Relic MCP; read/write is enforced at the
-            marketplace + skill layer, not here. -->
-    <set-variable name="hasMcpRole" value="@{
-      var authHeader = context.Request.Headers.GetValueOrDefault(&quot;Authorization&quot;, string.Empty);
-      if (!string.IsNullOrEmpty(authHeader) &amp;&amp; authHeader.StartsWith(&quot;Bearer &quot;)) {
-        try {
-          var jwt = authHeader.Substring(7).AsJwt();
-          if (jwt != null &amp;&amp; jwt.Claims.ContainsKey(&quot;roles&quot;)) {
-            return jwt.Claims.GetValueOrDefault(&quot;roles&quot;, string.Empty).Split(',').Contains(&quot;MCP.Access.Developer&quot;) ? &quot;true&quot; : &quot;false&quot;;
-          }
-        } catch { }
-      }
-      return &quot;false&quot;;
-    }" />
-    <choose>
-      <when condition="@((string)context.Variables[&quot;hasMcpRole&quot;] != &quot;true&quot;)">
-        <return-response>
-          <set-status code="403" reason="Forbidden" />
-          <set-header name="Content-Type" exists-action="override">
-            <value>application/json</value>
-          </set-header>
-          <set-body>{"error":"forbidden","message":"Caller is missing the MCP.Access.Developer app role for the New Relic MCP API."}</set-body>
-        </return-response>
-      </when>
-    </choose>
-
-    <!-- 3. Audit: extract caller identity + correlation id. -->
+    <!-- 2. Audit: extract caller identity + correlation id. -->
     <set-variable name="userOid" value="@{
       var authHeader = context.Request.Headers.GetValueOrDefault(&quot;Authorization&quot;, string.Empty);
       if (!string.IsNullOrEmpty(authHeader) &amp;&amp; authHeader.StartsWith(&quot;Bearer &quot;)) {
@@ -76,7 +59,7 @@
       <value>@((string)context.Variables["correlationId"])</value>
     </set-header>
 
-    <!-- 4. Per-user flood/cost guardrail. counter-key = user OID so one noisy
+    <!-- 3. Per-user flood/cost guardrail. counter-key = user OID so one noisy
             caller cannot starve the shared New Relic ingest budget (DECISION #3). -->
     <rate-limit-by-key
       calls="${rate_limit_calls}"
@@ -85,7 +68,7 @@
       remaining-calls-header-name="x-ratelimit-remaining"
       retry-after-header-name="Retry-After" />
 
-    <!-- 5. Backend authN: strip the client's Entra JWT, inject the New Relic
+    <!-- 4. Backend authN: strip the client's Entra JWT, inject the New Relic
             User key from the secret named value. The client never holds it. -->
     <set-header name="Authorization" exists-action="delete" />
     <set-header name="Api-Key" exists-action="override">
@@ -93,7 +76,7 @@
     </set-header>
     <set-header name="Ocp-Apim-Subscription-Key" exists-action="delete" />
 
-    <!-- 6. Route to New Relic's hosted MCP (POST https://mcp.newrelic.com/mcp/). -->
+    <!-- 5. Route to New Relic's hosted MCP (POST https://mcp.newrelic.com/mcp/). -->
     <set-backend-service base-url="${backend_url}" />
     <rewrite-uri template="/mcp/" />
   </inbound>

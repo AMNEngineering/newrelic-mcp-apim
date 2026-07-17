@@ -45,7 +45,7 @@ output "next_steps" {
     4. MCP endpoint: ${module.mcp_api.api_url}
 
     Security:
-    - Entra JWT validation + MCP.Read role gate
+    - Entra JWT validation + AD group-membership gate
     - Per-user rate limit: ${var.rate_limit_calls} calls / ${var.rate_limit_period_seconds}s
     - New Relic key injected server-side (client never holds it)
   EOT

@@ -30,7 +30,12 @@ variable "tenant_id" {
 }
 
 variable "newrelic_mcp_app_id" {
-  description = "Application (client) ID of the dedicated New Relic MCP Entra app (DECISION #2). ONE app for all New Relic MCP actions — read AND write; New Relic does not distinguish them at the token level, so neither does the app. The policy validates this audience and requires the MCP.Access.Developer app role; read/write is enforced at the marketplace/skill layer. Create it with identity/New-NewRelicMcpAppReg.ps1 and paste the id here."
+  description = "Application (client) ID of the dedicated New Relic MCP Entra app (DECISION #2) — the JWT audience the policy validates. ONE app for all New Relic MCP actions — read AND write; New Relic does not distinguish them at the token level, so neither does the app. Create it with identity/New-NewRelicMcpAppReg.ps1 and paste the id here."
+  type        = string
+}
+
+variable "newrelic_user_group_oid" {
+  description = "Object ID of the dedicated New Relic MCP AD group. Access is gated on membership in this group (the policy requires it in the JWT groups claim) — NOT an app role. Group name TBD; create it, then paste its OID here. Read/write is enforced at the marketplace/skill layer, so one group covers both."
   type        = string
 }
 

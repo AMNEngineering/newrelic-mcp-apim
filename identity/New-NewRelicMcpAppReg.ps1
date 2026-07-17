@@ -1,43 +1,54 @@
 <#
 .SYNOPSIS
 Idempotently create (or find) the dedicated Entra app registration for the New
-Relic MCP APIM gateway, and output its Application (client) ID.
+Relic MCP APIM gateway, and (optionally) the AD group that gates access. Outputs
+the Application (client) ID and the group Object ID for the tfvars.
 
 .DESCRIPTION
 The Terraform contract in this repo does NOT create identity — it only references
-the app id (as the JWT audience the APIM policy validates, and a named value). So
-this app registration is a PREREQUISITE that must exist before the pipeline runs.
+the app id and group OID (the JWT audience + the required groups claim the APIM
+policy validates). So these are PREREQUISITES that must exist before the pipeline
+runs.
 
-Design (decided 2026-07-16):
+Design (decided 2026-07-16/17):
   * ONE dedicated New Relic MCP app registration, used for ALL New Relic MCP
     actions — both read and write. New Relic does not distinguish read vs write at
     the token/User-key level, so the app registration does not either. Read/write
     is enforced at the marketplace + skill layer (only read is allowed unless write
     is explicitly requested; the write path is provisioned separately via Terraform
     in the pipeline, staged for CAB approval).
-  * Single app role `MCP.Access.Developer` (matches the AMN MCP Developer Gateway
-    role-naming convention). Grant it to the New Relic MCP AD group / users.
-  * Identifier URI api://<appId>; the policy validates both that and the bare GUID.
+  * Access is gated by MEMBERSHIP IN A DEDICATED AD GROUP (a groups-claim check in
+    the APIM policy) — NOT an app role. The app emits the groups claim
+    (groupMembershipClaims = SecurityGroup).
 
-Safe to re-run: if an app with the display name already exists it is reused, and
-the identifier URI + app role are reconciled.
+The app registration is created here; the AD group is created only if you pass
+-GroupName (its name was still TBD at authoring time).
+
+Safe to re-run: existing objects are reused and reconciled.
 
 .PARAMETER DisplayName
 App registration display name. Default 'AMN New Relic MCP'.
 
+.PARAMETER GroupName
+If provided, create/find this security group and print its Object ID for the
+newrelic_user_group_oid tfvars value. If omitted, only the app is handled.
+
 .PARAMETER CreateServicePrincipal
-Also ensure an enterprise app (service principal) exists so the app role can be
-assigned to users/groups. Default: $true.
+Also ensure an enterprise app (service principal) exists. Default: $true.
 
 .EXAMPLE
 ./New-NewRelicMcpAppReg.ps1
-Creates/*finds the app and prints the Application (client) ID to paste into
-infrastructure/environments/*.tfvars (newrelic_mcp_app_id).
+Create/find the app; print its Application (client) ID.
+
+.EXAMPLE
+./New-NewRelicMcpAppReg.ps1 -GroupName 'AZ_JobRole_Observability_NewRelicMcp_User'
+Also create/find the access group and print its Object ID.
 #>
 #Requires -Version 7.0
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [string]$DisplayName = 'AMN New Relic MCP',
+    [string]$GroupName = '',
     [bool]$CreateServicePrincipal = $true
 )
 
@@ -46,14 +57,11 @@ $ErrorActionPreference = 'Stop'
 function Info($m) { Write-Host "  -> $m" -ForegroundColor Cyan }
 function Ok($m) { Write-Host "  OK $m" -ForegroundColor Green }
 
-$roleValue = 'MCP.Access.Developer'
-
 # --- Find or create the app -------------------------------------------------
 Info "Looking for existing app '$DisplayName'..."
-$existing = az ad app list --display-name $DisplayName --query "[0].appId" -o tsv 2>$null
+$appId = az ad app list --display-name $DisplayName --query "[0].appId" -o tsv 2>$null
 
-if ($existing) {
-    $appId = $existing
+if ($appId) {
     Ok "Found existing app: $appId"
 }
 else {
@@ -68,33 +76,12 @@ Info "Ensuring identifier URI api://$appId ..."
 az ad app update --id $appId --identifier-uris "api://$appId" | Out-Null
 Ok "Identifier URI set."
 
-# --- App role MCP.Access.Developer (create-or-keep) -------------------------
-$currentRoles = az ad app show --id $appId --query "appRoles" -o json | ConvertFrom-Json
-$hasRole = $currentRoles | Where-Object { $_.value -eq $roleValue }
-if ($hasRole) {
-    Ok "App role '$roleValue' already present."
-}
-else {
-    Info "Adding app role '$roleValue'..."
-    $roleId = (New-Guid).Guid
-    $roles = @(@{
-            allowedMemberTypes = @('User', 'Application')  # delegated (devs) + app-only (CI/SPN)
-            description        = 'Access to the New Relic MCP gateway (read and write; read/write enforced at the skill layer).'
-            displayName        = 'MCP Access (Developer)'
-            id                 = $roleId
-            isEnabled          = $true
-            value              = $roleValue
-        })
-    # Merge with any pre-existing roles.
-    foreach ($r in $currentRoles) { $roles += @{ allowedMemberTypes = $r.allowedMemberTypes; description = $r.description; displayName = $r.displayName; id = $r.id; isEnabled = $r.isEnabled; value = $r.value } }
-    $tmp = New-TemporaryFile
-    ($roles | ConvertTo-Json -Depth 6 -AsArray) | Set-Content -Path $tmp -Encoding utf8
-    az ad app update --id $appId --app-roles "@$tmp" | Out-Null
-    Remove-Item $tmp -Force
-    Ok "App role '$roleValue' added."
-}
+# --- Emit the groups claim (so the policy's required groups claim is present) -
+Info "Setting groupMembershipClaims = SecurityGroup ..."
+az ad app update --id $appId --set groupMembershipClaims=SecurityGroup | Out-Null
+Ok "groups claim enabled."
 
-# --- Service principal (so the role can be assigned) ------------------------
+# --- Service principal ------------------------------------------------------
 if ($CreateServicePrincipal) {
     $spExists = az ad sp show --id $appId --query id -o tsv 2>$null
     if (-not $spExists) {
@@ -105,15 +92,37 @@ if ($CreateServicePrincipal) {
     else { Ok "Service principal already exists." }
 }
 
+# --- Optional: the access group ---------------------------------------------
+$groupOid = ''
+if ($GroupName) {
+    Info "Looking for security group '$GroupName'..."
+    $groupOid = az ad group list --display-name $GroupName --query "[0].id" -o tsv 2>$null
+    if ($groupOid) {
+        Ok "Found existing group: $groupOid"
+    }
+    elseif ($PSCmdlet.ShouldProcess($GroupName, "Create security group")) {
+        $nick = ($GroupName -replace '[^a-zA-Z0-9]', '')
+        Info "Creating security group '$GroupName'..."
+        $groupOid = az ad group create --display-name $GroupName --mail-nickname $nick --query id -o tsv
+        Ok "Created group: $groupOid"
+    }
+}
+
 Write-Host ""
 Write-Host "=============================================================" -ForegroundColor Green
-Write-Host " New Relic MCP app registration ready" -ForegroundColor Green
+Write-Host " New Relic MCP identity ready" -ForegroundColor Green
 Write-Host "   Application (client) ID : $appId" -ForegroundColor Green
 Write-Host "   Audience                : api://$appId" -ForegroundColor Green
-Write-Host "   App role                : $roleValue" -ForegroundColor Green
+if ($groupOid) { Write-Host "   Access group OID         : $groupOid" -ForegroundColor Green }
 Write-Host "=============================================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "Next:"
-Write-Host "  1. Set newrelic_mcp_app_id = `"$appId`" in infrastructure/environments/*.tfvars"
-Write-Host "  2. Assign the '$roleValue' app role to the New Relic MCP AD group / developers"
-Write-Host "     (Enterprise apps -> AMN New Relic MCP -> Users and groups)."
+Write-Host "Next — set in infrastructure/environments/*.tfvars:"
+Write-Host "  newrelic_mcp_app_id     = `"$appId`""
+if ($groupOid) {
+    Write-Host "  newrelic_user_group_oid = `"$groupOid`""
+    Write-Host "Then add developers to the '$GroupName' group."
+}
+else {
+    Write-Host "  newrelic_user_group_oid = `"<create the access group, then its Object ID>`""
+    Write-Host "Re-run with -GroupName '<name>' once the group name is decided to create it."
+}

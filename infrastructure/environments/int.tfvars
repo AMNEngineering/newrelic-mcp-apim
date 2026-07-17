@@ -10,10 +10,14 @@ backend_url = "https://mcp.newrelic.com"
 tenant_id = "6232c2ec-fa42-4f27-92cd-787913fba489"
 
 # Dedicated New Relic MCP Entra app (DECISION #2) — same single app across envs
-# for the pilot (one app for read + write). Create with
+# for the pilot (one app for read + write), used as the JWT audience. Create with
 # identity/New-NewRelicMcpAppReg.ps1; paste the Application (client) ID here.
-# TODO(Preflight). A per-env split is optional future hardening.
+# A per-env split is optional future hardening.
 newrelic_mcp_app_id = "REPLACE-WITH-newrelic-mcp-APP-ID"
+
+# Authorized AD group (DECISION #2): membership gates access (groups claim), not an
+# app role. Group name TBD — create it, paste its Object ID here.
+newrelic_user_group_oid = "REPLACE-WITH-newrelic-mcp-GROUP-OID"
 
 key_vault_name               = "co-wus2-newrelic-kv-p01"
 newrelic_api_key_secret_name = "AMNHealthcare-NR-Terraform-UserKey"

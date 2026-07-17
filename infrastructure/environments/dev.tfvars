@@ -11,10 +11,14 @@ backend_url = "https://mcp.newrelic.com"
 tenant_id = "6232c2ec-fa42-4f27-92cd-787913fba489"
 
 # Dedicated New Relic MCP Entra app (DECISION #2): ONE app for all NR MCP actions
-# (read + write). Callers present a JWT for this audience carrying the
-# MCP.Access.Developer app role. Create it with identity/New-NewRelicMcpAppReg.ps1
-# and paste the Application (client) ID here (TODO Preflight).
+# (read + write), used as the JWT audience. Create it with
+# identity/New-NewRelicMcpAppReg.ps1 and paste the Application (client) ID here.
 newrelic_mcp_app_id = "REPLACE-WITH-newrelic-mcp-APP-ID"
+
+# Authorized AD group (DECISION #2): access is gated on membership in the dedicated
+# New Relic MCP group (groups claim), NOT an app role. Group name TBD — create it,
+# then paste its Object ID here.
+newrelic_user_group_oid = "REPLACE-WITH-newrelic-mcp-GROUP-OID"
 
 # New Relic User key via Key Vault reference (DECISION #1 — never inline in state).
 key_vault_name               = "co-wus2-newrelic-kv-p01"

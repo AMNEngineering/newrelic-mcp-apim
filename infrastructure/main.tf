@@ -38,6 +38,12 @@ module "named_values" {
         display_name = "NewRelic-MCP-App-ID"
         value        = var.newrelic_mcp_app_id
       }
+
+      # Authorized AD group OID (policy requires this in the JWT groups claim)
+      "nv-newrelic-user-group-oid" = {
+        display_name = "NewRelic-MCP-User-Group-OID"
+        value        = var.newrelic_user_group_oid
+      }
     },
 
     # New Relic User key: Key Vault reference when key_vault_name is set
@@ -96,7 +102,7 @@ module "mcp_api" {
   depends_on = [module.backend_pool]
 }
 
-# API-level policy: JWT (dual audience) + MCP.Read role gate + audit +
+# API-level policy: JWT (dual audience) + AD group-membership gate + audit +
 # per-user rate limit + Api-Key injection + backend routing.
 module "mcp_policy" {
   source = "./modules/mcp-policy"
