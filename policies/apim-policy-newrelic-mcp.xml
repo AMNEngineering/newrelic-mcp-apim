@@ -25,27 +25,30 @@
       </audiences>
     </validate-azure-ad-token>
 
-    <!-- 2. Authorization: require the MCP.Read app role in the token. -->
-    <set-variable name="hasMcpReadRole" value="@{
+    <!-- 2. Authorization: require the MCP.Access.Developer app role. New Relic
+            does not distinguish read vs write at the token level, so this single
+            role grants access to the New Relic MCP; read/write is enforced at the
+            marketplace + skill layer, not here. -->
+    <set-variable name="hasMcpRole" value="@{
       var authHeader = context.Request.Headers.GetValueOrDefault(&quot;Authorization&quot;, string.Empty);
       if (!string.IsNullOrEmpty(authHeader) &amp;&amp; authHeader.StartsWith(&quot;Bearer &quot;)) {
         try {
           var jwt = authHeader.Substring(7).AsJwt();
           if (jwt != null &amp;&amp; jwt.Claims.ContainsKey(&quot;roles&quot;)) {
-            return jwt.Claims.GetValueOrDefault(&quot;roles&quot;, string.Empty).Split(',').Contains(&quot;MCP.Read&quot;) ? &quot;true&quot; : &quot;false&quot;;
+            return jwt.Claims.GetValueOrDefault(&quot;roles&quot;, string.Empty).Split(',').Contains(&quot;MCP.Access.Developer&quot;) ? &quot;true&quot; : &quot;false&quot;;
           }
         } catch { }
       }
       return &quot;false&quot;;
     }" />
     <choose>
-      <when condition="@((string)context.Variables[&quot;hasMcpReadRole&quot;] != &quot;true&quot;)">
+      <when condition="@((string)context.Variables[&quot;hasMcpRole&quot;] != &quot;true&quot;)">
         <return-response>
           <set-status code="403" reason="Forbidden" />
           <set-header name="Content-Type" exists-action="override">
             <value>application/json</value>
           </set-header>
-          <set-body>{"error":"forbidden","message":"Caller is missing the MCP.Read app role for the New Relic MCP API."}</set-body>
+          <set-body>{"error":"forbidden","message":"Caller is missing the MCP.Access.Developer app role for the New Relic MCP API."}</set-body>
         </return-response>
       </when>
     </choose>

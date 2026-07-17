@@ -11,9 +11,10 @@ backend_url = "https://mcp.newrelic.com"
 
 tenant_id = "6232c2ec-fa42-4f27-92cd-787913fba489"
 
-# TODO(prod): dedicated prod app + AZ_AMN_AAD_NewRelicMcp_Prod_User group is the
-# expected end state (least privilege). Confirm before enabling prod.
-newrelic_mcp_app_id = "TBD-newrelic-mcp-reader-PROD-APP-ID"
+# Dedicated New Relic MCP Entra app (DECISION #2). For the pilot this is the same
+# single app as dev/int; a dedicated prod app is optional future hardening.
+# Confirm the app id + MCP.Access.Developer role assignment before enabling prod.
+newrelic_mcp_app_id = "TBD-newrelic-mcp-PROD-APP-ID"
 
 key_vault_name               = "co-wus2-newrelic-kv-p01"
 newrelic_api_key_secret_name = "AMNHealthcare-NR-Terraform-UserKey"

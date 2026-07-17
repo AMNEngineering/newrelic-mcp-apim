@@ -6,10 +6,10 @@ Design decisions, resolved with Bart (Cloud Ops) on 2026-07-16.
 
 | # | Decision | Resolution |
 |---|----------|------------|
-| 1 | New Relic key storage | **Key Vault reference** to the existing NerdGraph **User key** (`co-wus2-newrelic-kv-p01`). New Relic has no read-only key type — a User key inherits its user's permissions — so read/write is enforced at the **skill layer**, not the credential. Never inline in TF state. |
-| 2 | Identity | **Reuse Bart's `api://newrelic-mcp-reader` app** + an `MCP.Read` app role (roles-claim gate), matching the sfdc gold-standard identity model. Split to a dedicated per-env app + `AZ_AMN_AAD_NewRelicMcp_{env}_User` group before broad rollout. |
+| 1 | New Relic key storage | **Key Vault reference** to the existing NerdGraph **User key** — secret `AMNHealthcare-NR-Terraform-UserKey` in `co-wus2-newrelic-kv-p01` (confirmed present + enabled). New Relic has no read-only key type — a User key inherits its user's permissions — so read/write is enforced at the **skill layer**, not the credential. Never inline in TF state. |
+| 2 | Identity | **One NEW dedicated New Relic MCP app registration** covering **all** NR MCP actions — read AND write. New Relic does not distinguish read vs write at the token/User-key level, so the app registration does not either. Single `MCP.Access.Developer` app role (roles-claim gate). `api://newrelic-mcp-reader` from the prototype never existed; created fresh via `identity/New-NewRelicMcpAppReg.ps1`. Read/write is enforced strictly at the **marketplace + skill layer** (only read allowed unless write is explicitly requested). One app across envs for the pilot; per-env split is optional future hardening. |
 | 3 | Rate limit | **Per-user `rate-limit-by-key`, default 300 calls / 60s.** Unlike the SFDC reference (which documents but does not implement a limit), New Relic has a real flood/cost vector — arbitrary NRQL — so we implement one. Tunable in `*.tfvars`. |
-| 4 | Write path (`newrelic-rw`) | **Read-only first.** `newrelic-rw` (dashboard writes) stays local (ask/deny) until rehosted as an HTTP/Functions MCP; then it can front through APIM as a follow-on. |
+| 4 | Write path (`newrelic-rw`) | **Read-only first.** The dedicated app (#2) already covers write, but write actions are gated at the skill layer; the actual write MCP host is provisioned separately via Terraform in the pipeline, staged for CAB approval, as a follow-on. |
 | 5 | Repo home | **This repo** (`newrelic-mcp-apim`), modernized in place onto the sfdc pattern. |
 
 ## How this differs from the prior prototype (June)
@@ -34,11 +34,12 @@ gold-standard pattern and the decisions above.
 
 ## Caveats to resolve at deploy
 
-- **#1 secret name** — the exact Key Vault secret is unsettled (candidates:
-  `AMNHealthcare-NR-Terraform-UserKey`, `NewRelic-AMNHealthcare-AMN-Ops-AI-Plugin-Marketplace`).
-  Confirm at Preflight; set `newrelic_api_key_secret_name`.
+- **#1 secret name** — CONFIRMED: `AMNHealthcare-NR-Terraform-UserKey` exists and is
+  enabled in `co-wus2-newrelic-kv-p01`. (default of `newrelic_api_key_secret_name`.)
 - **#1 account reach** — the `…-Terraform-UserKey` service-user keys may be scoped
   narrower than a developer's laptop `NEW_RELIC_API_KEY`. Confirm cross-subaccount
   reach at Verify via `list_available_new_relic_accounts` through the gateway.
-- **#2 app id** — fill the real `newrelic-mcp-reader` app id into the env `*.tfvars`
-  (`REPLACE-WITH-…` placeholders).
+- **#2 app id** — run `identity/New-NewRelicMcpAppReg.ps1` (needs app-admin) to create
+  the app, then paste its Application (client) ID into the env `*.tfvars`
+  (`REPLACE-WITH-…` placeholders). Assign the `MCP.Access.Developer` role to the
+  New Relic MCP AD group / developers.

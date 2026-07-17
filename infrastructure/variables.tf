@@ -30,7 +30,7 @@ variable "tenant_id" {
 }
 
 variable "newrelic_mcp_app_id" {
-  description = "Entra app registration ID whose audience the policy validates (DECISION #2: reuse Bart's api://newrelic-mcp-reader app). Callers present a JWT for this audience carrying the MCP.Read app role."
+  description = "Application (client) ID of the dedicated New Relic MCP Entra app (DECISION #2). ONE app for all New Relic MCP actions — read AND write; New Relic does not distinguish them at the token level, so neither does the app. The policy validates this audience and requires the MCP.Access.Developer app role; read/write is enforced at the marketplace/skill layer. Create it with identity/New-NewRelicMcpAppReg.ps1 and paste the id here."
   type        = string
 }
 
@@ -44,7 +44,7 @@ variable "key_vault_name" {
 }
 
 variable "newrelic_api_key_secret_name" {
-  description = "Secret name in key_vault_name for the New Relic User key. NOTE: the exact secret is unsettled (candidates seen: AMNHealthcare-NR-Terraform-UserKey, NewRelic-AMNHealthcare-AMN-Ops-AI-Plugin-Marketplace) — confirm at Preflight. Also confirm the key's cross-subaccount reach at Verify."
+  description = "Secret name in key_vault_name for the New Relic User key. Confirmed: AMNHealthcare-NR-Terraform-UserKey (exists + enabled in co-wus2-newrelic-kv-p01). Still confirm the key's cross-subaccount reach at Verify."
   type        = string
   default     = "AMNHealthcare-NR-Terraform-UserKey"
 }

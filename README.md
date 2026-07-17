@@ -19,7 +19,7 @@ on the shared CloudOps service connections into the shared hub APIM.
 
 ```
 Claude Code (MCP client)
-  │  Authorization: Bearer <Entra JWT>   (aud api://newrelic-mcp-reader, role MCP.Read)
+  │  Authorization: Bearer <Entra JWT>   (aud = dedicated NR MCP app, role MCP.Access.Developer)
   ▼
 APIM  amn-wus2-hub-apim-{d02,i02,p02}
   API: api-newrelic-{env}   path: mcp/newrelic/{env}   ops: /health, /mcp (POST/GET/DELETE)
@@ -47,9 +47,11 @@ test-harness/Invoke-ApimSmokeTest.ps1   MCP initialize + tools/list + negative-a
 
 ## Deploy (governed)
 
-1. **Preflight** — confirm: the `newrelic-mcp-reader` Entra app id (fill it into the
-   env `*.tfvars`), the New Relic key secret name in `co-wus2-newrelic-kv-p01`, and
-   that APIM's managed identity has Key Vault `get`.
+1. **Preflight** — create the dedicated New Relic MCP app registration with
+   `identity/New-NewRelicMcpAppReg.ps1` (one app for read + write; `MCP.Access.Developer`
+   role) and paste its app id into the env `*.tfvars`; assign the role to the NR MCP
+   AD group. Confirm the key secret (`AMNHealthcare-NR-Terraform-UserKey` in
+   `co-wus2-newrelic-kv-p01`) and that APIM's managed identity has Key Vault `get`.
 2. **Register the pipeline** in the ADO *Cloud Operations* project — see
    [`.ado/CREATE-PIPELINE-MANUAL.md`](.ado/CREATE-PIPELINE-MANUAL.md). Add approvers
    to the `newrelic-mcp-int` ADO Environment (CAB gate).
@@ -68,6 +70,6 @@ test-harness/Invoke-ApimSmokeTest.ps1   MCP initialize + tools/list + negative-a
   "headers": { "Authorization": "Bearer ${NEWRELIC_MCP_TOKEN}" }
 }
 ```
-The token is an Entra bearer for `api://newrelic-mcp-reader` (same acquisition
-pattern as the model gateway). The `NEW_RELIC_API_KEY` env var can be dropped
-from developer setup entirely.
+The token is an Entra bearer for the dedicated New Relic MCP app `api://<app-id>`
+(same acquisition pattern as the model gateway). The `NEW_RELIC_API_KEY` env var
+can be dropped from developer setup entirely.

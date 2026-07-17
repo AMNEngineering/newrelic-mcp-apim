@@ -9,10 +9,11 @@ backend_url = "https://mcp.newrelic.com"
 
 tenant_id = "6232c2ec-fa42-4f27-92cd-787913fba489"
 
-# Reuse of api://newrelic-mcp-reader (DECISION #2). Split to a dedicated
-# per-env app + AZ_AMN_AAD_NewRelicMcp_Int_User group before broad rollout.
-# TODO(Preflight): fill the real app id from Entra.
-newrelic_mcp_app_id = "REPLACE-WITH-newrelic-mcp-reader-APP-ID"
+# Dedicated New Relic MCP Entra app (DECISION #2) — same single app across envs
+# for the pilot (one app for read + write). Create with
+# identity/New-NewRelicMcpAppReg.ps1; paste the Application (client) ID here.
+# TODO(Preflight). A per-env split is optional future hardening.
+newrelic_mcp_app_id = "REPLACE-WITH-newrelic-mcp-APP-ID"
 
 key_vault_name               = "co-wus2-newrelic-kv-p01"
 newrelic_api_key_secret_name = "AMNHealthcare-NR-Terraform-UserKey"
