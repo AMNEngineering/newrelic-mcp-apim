@@ -55,7 +55,8 @@ function Info($m) { Write-Host "  ->    $m" -ForegroundColor Cyan }
 # --- Resolve gateway + app id ------------------------------------------------
 $apimHost = @{ dev = 'amn-wus2-hub-apim-d02'; int = 'amn-wus2-hub-apim-i02'; prod = 'amn-wus2-hub-apim-p02' }[$Environment]
 if (-not $GatewayBaseUrl) { $GatewayBaseUrl = "https://$apimHost.azure-api.net" }
-$mcpUrl = "$GatewayBaseUrl/mcp/newrelic/$Environment/mcp"
+# Native type=mcp API: the MCP endpoint IS the API path (no trailing /mcp operation).
+$mcpUrl = "$GatewayBaseUrl/mcp/newrelic/$Environment"
 
 if (-not $AppId) {
     $tfvars = Join-Path $PSScriptRoot ".." "infrastructure" "environments" "$Environment.tfvars"

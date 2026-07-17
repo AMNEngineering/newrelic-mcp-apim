@@ -22,6 +22,13 @@ gold-standard pattern and the decisions above.
 
 ## How this differs from the SFDC gold standard
 
+- **Native `type=mcp` API, not plain REST.** SFDC models MCP as a plain `azurerm`
+  REST API with hand-declared `/mcp` operations (shaped by its Power Automate /
+  Copilot connector-export needs). New Relic uses APIM's **native `type=mcp`** API
+  (`azapi`), fronting NR's hosted MCP via `backendId` + `mcpProperties` — modeled on
+  **`amn-passport-mcp`**, which already runs this way on the same APIM. This makes
+  it a first-class MCP server that MCP-enabled clients register directly, and routing
+  is native (no operations, no `set-backend-service`/`rewrite-uri` in the policy).
 - **Much simpler backend auth.** SFDC does an OAuth `client_credentials` exchange
   *inside* the policy (cache + send-request). New Relic uses a **static Api-Key**,
   so that whole dance collapses to one injected header.
@@ -29,8 +36,9 @@ gold-standard pattern and the decisions above.
 - **No `oauth2-auth-server` module.** That exists in SFDC only to export connector
   metadata for Power Automate / Copilot Studio. New Relic's client is Claude Code
   (Entra JWT), so it's omitted.
-- **No dev-mock policy.** New Relic's hosted MCP is reachable directly, so dev uses
-  the real backend.
+- **No dev-mock / health-check operation.** New Relic's hosted MCP is reachable
+  directly, and a `type=mcp` API has no per-operation surface for a `/health` probe
+  (like `amn-passport-mcp`); liveness is covered by the smoke test's MCP `initialize`.
 
 ## Caveats to resolve at deploy
 

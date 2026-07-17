@@ -6,9 +6,10 @@
 
   Flow: validate Entra JWT (dual audience + required groups claim = membership in
   the dedicated New Relic MCP AD group) -> audit -> per-user rate limit -> strip
-  client auth + inject New Relic key -> route to New Relic's hosted MCP. New Relic
-  uses a static Api-Key (no OAuth token exchange), so this is much simpler than
-  the Salesforce reference.
+  client auth + inject New Relic key. Routing to New Relic's hosted MCP is native
+  to the type=mcp API (backendId + mcpProperties), so the policy does not route.
+  New Relic uses a static Api-Key (no OAuth token exchange), so this is much
+  simpler than the Salesforce reference.
 
   NO response buffering: MCP is streamable HTTP (chunked / text/event-stream),
   so the policy never reads the response body.
@@ -69,16 +70,14 @@
       retry-after-header-name="Retry-After" />
 
     <!-- 4. Backend authN: strip the client's Entra JWT, inject the New Relic
-            User key from the secret named value. The client never holds it. -->
+            User key from the secret named value. The client never holds it.
+            Routing to New Relic is handled natively by the type=mcp API
+            (backendId + mcpProperties) — no set-backend-service here. -->
     <set-header name="Authorization" exists-action="delete" />
     <set-header name="Api-Key" exists-action="override">
       <value>{{nv-newrelic-mcp-api-key}}</value>
     </set-header>
     <set-header name="Ocp-Apim-Subscription-Key" exists-action="delete" />
-
-    <!-- 5. Route to New Relic's hosted MCP (POST https://mcp.newrelic.com/mcp/). -->
-    <set-backend-service base-url="${backend_url}" />
-    <rewrite-uri template="/mcp/" />
   </inbound>
 
   <backend>

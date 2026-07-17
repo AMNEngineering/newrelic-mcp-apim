@@ -19,13 +19,8 @@ output "api_path" {
 }
 
 output "backend_id" {
-  description = "Backend resource ID"
-  value       = module.backend_pool.backend_id
-}
-
-output "backend_name" {
-  description = "Backend name"
-  value       = module.backend_pool.backend_name
+  description = "Backend resource name"
+  value       = module.mcp_api.backend_id
 }
 
 output "environment" {

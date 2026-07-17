@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 3.71"
     }
+    azapi = {
+      source  = "azure/azapi"
+      version = "~> 1.13"
+    }
   }
 }
 
@@ -12,18 +16,23 @@ provider "azurerm" {
   features {}
 }
 
+provider "azapi" {
+  # Hosted ADO agents have no system MI — azapi's default chain hits IMDS first
+  # and 400s. Disable MSI so it falls through to the AzureCLI@2 session.
+  use_msi = false
+}
+
 # ---------------------------------------------------------------------------
 # Named values consumed by the API policy.
 #
-# New Relic is far simpler than the Salesforce reference this repo is modeled
-# on: there is NO OAuth token exchange. New Relic's hosted MCP authenticates
-# with a single static NerdGraph User key sent as an `Api-Key` header, so we
-# only need the app id (for JWT audience) and the key itself.
+# New Relic is far simpler than the Salesforce reference: there is NO OAuth token
+# exchange. New Relic's hosted MCP authenticates with a single static NerdGraph
+# User key sent as an `Api-Key` header. We only need the app id (JWT audience),
+# the authorized group OID (groups-claim gate), and the key itself.
 #
-# DECISION #1: the key is delivered as a Key Vault REFERENCE (never inline in
-# TF state) when var.key_vault_name is set. There is no read-only key type in
-# New Relic — a User key inherits its user's permissions — so read/write is
-# enforced at the skill layer, not the credential.
+# DECISION #1: the key is a Key Vault REFERENCE (never inline in TF state) when
+# var.key_vault_name is set. New Relic has no read-only key type — read/write is
+# enforced at the marketplace/skill layer, not the credential.
 # ---------------------------------------------------------------------------
 module "named_values" {
   source = "./modules/named-values"
@@ -64,76 +73,36 @@ module "named_values" {
   tags = var.tags
 }
 
-# Backend: New Relic's hosted MCP endpoint.
-module "backend_pool" {
-  source = "./modules/backend-pool"
+# Native APIM MCP API (type=mcp) + backend = New Relic's hosted MCP. Modeled on
+# amn-passport-mcp on this same APIM. Clients connect to it as a first-class MCP
+# server; routing to New Relic is native (backendId + mcpProperties).
+module "mcp_api" {
+  source = "./modules/mcp-api"
 
-  apim_name      = var.apim_name
-  resource_group = var.apim_resource_group
-  service_name   = "newrelic"
-  environment    = var.environment
-  backend_url    = var.backend_url
-
-  tls_validate_certificate_chain = true
-  tls_validate_certificate_name  = true
-
-  description = "New Relic hosted MCP server (${var.environment})"
+  apim_name       = var.apim_name
+  resource_group  = var.apim_resource_group
+  service_name    = "newrelic"
+  environment     = var.environment
+  api_path        = "mcp/newrelic/${var.environment}"
+  backend_url     = var.backend_url
+  api_description = "Claude Code / MCP clients -> APIM -> New Relic hosted MCP (${var.environment}). Entra JWT; AD group-gated; New Relic key injected server-side."
 
   depends_on = [module.named_values]
 }
 
-# The MCP API + operations (health, mcp POST/GET/DELETE).
-# Plain azurerm REST API with MCP modeled as HTTP operations, routing handled
-# in policy — matches the sfdc-read-mcp-apim gold-standard pattern (no azapi,
-# no native type=mcp). No OAuth2 authorization server: New Relic clients are
-# Claude Code (Entra JWT), not Power Automate / Copilot Studio connectors.
-module "mcp_api" {
-  source = "./modules/mcp-api"
-
-  apim_name      = var.apim_name
-  resource_group = var.apim_resource_group
-  service_name   = "newrelic"
-  environment    = var.environment
-
-  api_path              = "mcp/newrelic/${var.environment}"
-  subscription_required = false
-  api_description       = "Claude Code -> APIM -> New Relic hosted MCP (${var.environment}). Entra JWT; role-gated; New Relic key injected server-side."
-
-  depends_on = [module.backend_pool]
-}
-
 # API-level policy: JWT (dual audience) + AD group-membership gate + audit +
-# per-user rate limit + Api-Key injection + backend routing.
+# per-user rate limit + Api-Key injection. No set-backend-service/rewrite-uri —
+# the type=mcp API routes to the backend natively.
 module "mcp_policy" {
   source = "./modules/mcp-policy"
 
-  apim_name      = var.apim_name
-  resource_group = var.apim_resource_group
-  api_name       = module.mcp_api.api_name
+  api_resource_id = module.mcp_api.api_id
 
   policy_xml_content = templatefile("${path.root}/../policies/apim-policy-newrelic-mcp.xml", {
     tenant_id                 = var.tenant_id
-    environment               = var.environment
     rate_limit_calls          = var.rate_limit_calls
     rate_limit_period_seconds = var.rate_limit_period_seconds
-    backend_url               = var.backend_url
   })
 
   depends_on = [module.mcp_api, module.named_values]
-}
-
-# Health check operation policy (no JWT — liveness probe for AFD/network).
-module "health_check_policy" {
-  source = "./modules/mcp-api-operation-policy"
-
-  apim_name      = var.apim_name
-  resource_group = var.apim_resource_group
-  api_name       = module.mcp_api.api_name
-  operation_id   = "health-check"
-
-  policy_xml_content = templatefile("${path.root}/../policies/apim-policy-health-check.xml", {
-    environment = var.environment
-  })
-
-  depends_on = [module.mcp_api]
 }

@@ -22,12 +22,12 @@ Claude Code (MCP client)
   │  Authorization: Bearer <Entra JWT>   (aud = dedicated NR MCP app; member of the NR MCP AD group)
   ▼
 APIM  amn-wus2-hub-apim-{d02,i02,p02}
-  API: api-newrelic-{env}   path: mcp/newrelic/{env}   ops: /health, /mcp (POST/GET/DELETE)
-  │  inbound: validate-azure-ad-token (dual audience) + MCP.Read role gate
+  API: api-newrelic-{env}   type=mcp   path: mcp/newrelic/{env}   (native MCP, like amn-passport-mcp)
+  │  inbound: validate-azure-ad-token (dual audience) + AD group-membership gate (groups claim)
   │  inbound: audit (x-apim-user-id, x-correlation-id)
   │  inbound: rate-limit-by-key (per user OID)          ← flood/cost guardrail
   │  inbound: strip Authorization, inject Api-Key {{nv-newrelic-mcp-api-key}}  ← from Key Vault
-  │  inbound: route + rewrite-uri /mcp/                 (no response buffering — streamable HTTP)
+  │  (routing to the backend is native to type=mcp — backendId + mcpProperties; no response buffering)
   ▼
 https://mcp.newrelic.com/mcp/          New Relic hosted MCP (read-only)
 ```
@@ -37,11 +37,11 @@ https://mcp.newrelic.com/mcp/          New Relic hosted MCP (read-only)
 ```
 infrastructure/          Terraform root (main/variables/outputs/backend)
   environments/{dev,int,prod}.tfvars
-  modules/{named-values, backend-pool, mcp-api, mcp-policy, mcp-api-operation-policy}
+  modules/{named-values, mcp-api, mcp-policy}   (mcp-api/mcp-policy are azapi — type=mcp)
 policies/
-  apim-policy-newrelic-mcp.xml   JWT + MCP.Read role + rate limit + Api-Key injection + routing
-  apim-policy-health-check.xml   /health, no JWT (liveness probe)
+  apim-policy-newrelic-mcp.xml   JWT + AD group gate + rate limit + Api-Key injection
 .ado/pipelines/deploy.yml        Build → Plan → Apply (CAB-gated) → Verify, per env
+identity/                        app-registration + access-group bootstrap (New-NewRelicMcpAppReg.ps1)
 test-harness/Invoke-ApimSmokeTest.ps1   MCP initialize + tools/list + negative-auth smoke test
 ```
 
@@ -68,7 +68,7 @@ test-harness/Invoke-ApimSmokeTest.ps1   MCP initialize + tools/list + negative-a
 ```jsonc
 "newrelic": {
   "type": "http",
-  "url": "https://<gateway>/mcp/newrelic/<env>/mcp",
+  "url": "https://<gateway>/mcp/newrelic/<env>",
   "headers": { "Authorization": "Bearer ${NEWRELIC_MCP_TOKEN}" }
 }
 ```

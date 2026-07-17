@@ -1,19 +1,9 @@
-variable "apim_name" {
-  description = "Name of the APIM instance"
-  type        = string
-}
-
-variable "resource_group" {
-  description = "Resource group containing the APIM instance"
-  type        = string
-}
-
-variable "api_name" {
-  description = "API name to apply policy to"
+variable "api_resource_id" {
+  description = "Resource ID of the type=mcp API (azapi) to attach the policy to."
   type        = string
 }
 
 variable "policy_xml_content" {
-  description = "Complete policy XML content"
+  description = "Rendered API-level policy XML."
   type        = string
 }

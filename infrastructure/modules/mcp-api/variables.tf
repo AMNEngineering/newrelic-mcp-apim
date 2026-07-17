@@ -19,21 +19,15 @@ variable "environment" {
 }
 
 variable "api_path" {
-  description = "API path suffix (default: mcp/{service}/{env})"
+  description = "API path suffix (default: mcp/{service}/{env}). This is the client-facing MCP endpoint path."
   type        = string
   default     = ""
 }
 
 variable "subscription_required" {
-  description = "Whether APIM subscription key is required"
+  description = "Whether an APIM subscription key is required (auth is Entra JWT, so false)"
   type        = bool
   default     = false
-}
-
-variable "protocols" {
-  description = "Allowed protocols"
-  type        = list(string)
-  default     = ["https"]
 }
 
 variable "api_description" {
@@ -42,14 +36,13 @@ variable "api_description" {
   default     = ""
 }
 
-variable "oauth2_authorization_server_name" {
-  description = "Name of the APIM OAuth2 authorization server to bind to this API. Empty string disables binding."
+variable "backend_url" {
+  description = "Upstream MCP server base URL (e.g. https://mcp.newrelic.com)"
   type        = string
-  default     = ""
 }
 
-variable "oauth2_scope" {
-  description = "OAuth2 scope advertised in the API's OAuth2 binding (typically api://<client-app-id>/user_impersonation)."
+variable "backend_mcp_path" {
+  description = "MCP endpoint path appended to backend_url (mcpProperties.endpoints.mcp.uriTemplate)."
   type        = string
-  default     = ""
+  default     = "/mcp/"
 }
