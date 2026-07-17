@@ -61,8 +61,9 @@ resource "azapi_resource" "mcp_api" {
       mcpProperties = {
         endpoints = {
           mcp = {
-            # Path appended to the backend URL. NR's MCP lives at /mcp/ on
-            # mcp.newrelic.com; confirm at plan (Passport uses /runtime/webhooks/mcp).
+            # Path appended to the backend URL. New Relic exposes a SINGLE fixed
+            # MCP address for all MCP needs: https://mcp.newrelic.com/mcp/ (same
+            # for every env). So backend_url = https://mcp.newrelic.com + /mcp/.
             uriTemplate = var.backend_mcp_path
           }
         }

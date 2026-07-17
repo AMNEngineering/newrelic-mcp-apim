@@ -18,7 +18,7 @@ variable "apim_resource_group" {
 }
 
 variable "backend_url" {
-  description = "New Relic hosted MCP endpoint (base URL). The API operations expose /mcp; the policy routes here."
+  description = "New Relic hosted MCP base URL. NR exposes a single fixed MCP address for all needs (https://mcp.newrelic.com/mcp/), same across envs — this is the base; the /mcp/ path is the module's backend_mcp_path."
   type        = string
   default     = "https://mcp.newrelic.com"
 }
