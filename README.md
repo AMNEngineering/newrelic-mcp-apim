@@ -47,12 +47,12 @@ test-harness/Invoke-ApimSmokeTest.ps1   MCP initialize + tools/list + negative-a
 
 ## Deploy (governed)
 
-1. **Preflight** — create the dedicated New Relic MCP app registration + access
-   group with `identity/New-NewRelicMcpAppReg.ps1 -GroupName '<name>'` (one app +
-   one group for read + write; access gated by group membership), paste the app id
-   and group OID into the env `*.tfvars`, and add developers to the group. Confirm
-   the key secret (`AMNHealthcare-NR-Terraform-UserKey` in `co-wus2-newrelic-kv-p01`)
-   and that APIM's managed identity has Key Vault `get`.
+1. **Preflight** — create identity: `identity/New-NewRelicMcpAppReg.ps1 -GroupName '<name>'`
+   (creates the app + access group, ApplicationGroup claims, assigns the group), then
+   seed membership with `identity/Sync-NewRelicMcpAccessGroup.ps1 -TargetGroupOid <oid>`
+   (one-time import of all NR notification-DL members). Paste the app id + group OID
+   into the env `*.tfvars`. Confirm the key secret (`AMNHealthcare-NR-Terraform-UserKey`
+   in `co-wus2-newrelic-kv-p01`) and that APIM's managed identity has Key Vault `get`.
 2. **Register the pipeline** in the ADO *Cloud Operations* project — see
    [`.ado/CREATE-PIPELINE-MANUAL.md`](.ado/CREATE-PIPELINE-MANUAL.md). Add approvers
    to the `newrelic-mcp-int` ADO Environment (CAB gate).
