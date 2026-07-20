@@ -75,3 +75,7 @@ test-harness/Invoke-ApimSmokeTest.ps1   MCP initialize + tools/list + negative-a
 The token is an Entra bearer for the dedicated New Relic MCP app `api://<app-id>`
 (same acquisition pattern as the model gateway). The `NEW_RELIC_API_KEY` env var
 can be dropped from developer setup entirely.
+
+**Connecting any MCP client** (Claude Code, VS Code, Copilot Studio, curl) — see
+[`docs/CONNECT-MCP-CLIENT.md`](docs/CONNECT-MCP-CLIENT.md) for endpoint URLs, token
+acquisition, the access-group requirement, and per-client config snippets.
