@@ -1,0 +1,104 @@
+<!--
+  New Relic MCP — API-level policy.
+
+  Rendered by Terraform templatefile(): ${...} placeholders are TF vars,
+  {{...}} are APIM named values.
+
+  Flow: validate Entra JWT (dual audience + required groups claim = membership in
+  the dedicated New Relic MCP AD group) -> audit -> per-user rate limit -> strip
+  client auth + inject New Relic key. Routing to New Relic's hosted MCP is native
+  to the type=mcp API (backendId + mcpProperties), so the policy does not route.
+  New Relic uses a static Api-Key (no OAuth token exchange), so this is much
+  simpler than the Salesforce reference.
+
+  NO response buffering: MCP is streamable HTTP (chunked / text/event-stream),
+  so the policy never reads the response body.
+-->
+<policies>
+  <inbound>
+    <base />
+
+    <!-- 1. Client authN + authZ: Entra JWT with a required groups claim. Access
+            is gated by membership in the dedicated New Relic MCP AD group (OID in
+            nv-newrelic-user-group-oid) — NOT an app role. New Relic does not
+            distinguish read vs write at the token level, so group membership grants
+            access to the New Relic MCP; read/write is enforced at the marketplace +
+            skill layer, not here.
+            Dual audience accepts both the api:// URI and bare-GUID forms. -->
+    <validate-azure-ad-token tenant-id="${tenant_id}" header-name="Authorization" failed-validation-httpcode="401">
+      <audiences>
+        <audience>api://{{newrelic-mcp-app-id}}</audience>
+        <audience>{{newrelic-mcp-app-id}}</audience>
+      </audiences>
+      <required-claims>
+        <claim name="groups" match="any">
+          <value>{{nv-newrelic-user-group-oid}}</value>
+        </claim>
+      </required-claims>
+    </validate-azure-ad-token>
+
+    <!-- 2. Audit: extract caller identity + correlation id. -->
+    <set-variable name="userOid" value="@{
+      var authHeader = context.Request.Headers.GetValueOrDefault(&quot;Authorization&quot;, string.Empty);
+      if (!string.IsNullOrEmpty(authHeader) &amp;&amp; authHeader.StartsWith(&quot;Bearer &quot;)) {
+        try {
+          var jwt = authHeader.Substring(7).AsJwt();
+          if (jwt != null) {
+            var oid = jwt.Claims.GetValueOrDefault(&quot;oid&quot;, string.Empty);
+            var upn = jwt.Claims.GetValueOrDefault(&quot;upn&quot;, string.Empty);
+            return !string.IsNullOrEmpty(oid) ? oid : upn;
+          }
+        } catch { }
+      }
+      return &quot;anonymous&quot;;
+    }" />
+    <set-header name="x-apim-user-id" exists-action="override">
+      <value>@((string)context.Variables["userOid"])</value>
+    </set-header>
+    <set-variable name="correlationId" value='@(context.Request.Headers.GetValueOrDefault("x-correlation-id", Guid.NewGuid().ToString()))' />
+    <set-header name="x-correlation-id" exists-action="override">
+      <value>@((string)context.Variables["correlationId"])</value>
+    </set-header>
+
+    <!-- 3. Per-user flood/cost guardrail. counter-key = user OID so one noisy
+            caller cannot starve the shared New Relic ingest budget (DECISION #3). -->
+    <rate-limit-by-key
+      calls="${rate_limit_calls}"
+      renewal-period="${rate_limit_period_seconds}"
+      counter-key="@((string)context.Variables[&quot;userOid&quot;])"
+      remaining-calls-header-name="x-ratelimit-remaining"
+      retry-after-header-name="Retry-After" />
+
+    <!-- 4. Backend authN: strip the client's Entra JWT, inject the New Relic
+            User key from the secret named value. The client never holds it.
+            Routing to New Relic is handled natively by the type=mcp API
+            (backendId + mcpProperties) — no set-backend-service here. -->
+    <set-header name="Authorization" exists-action="delete" />
+    <set-header name="Api-Key" exists-action="override">
+      <value>{{nv-newrelic-mcp-api-key}}</value>
+    </set-header>
+    <set-header name="Ocp-Apim-Subscription-Key" exists-action="delete" />
+  </inbound>
+
+  <backend>
+    <base />
+  </backend>
+
+  <outbound>
+    <!-- No body read — MCP streaming passes through untransformed. -->
+    <base />
+    <set-header name="x-correlation-id" exists-action="override">
+      <value>@((string)context.Variables["correlationId"])</value>
+    </set-header>
+    <set-header name="x-apim-mcp-user" exists-action="override">
+      <value>@((string)context.Variables["userOid"])</value>
+    </set-header>
+  </outbound>
+
+  <on-error>
+    <base />
+    <set-header name="x-correlation-id" exists-action="override">
+      <value>@(context.Variables.ContainsKey("correlationId") ? (string)context.Variables["correlationId"] : Guid.NewGuid().ToString())</value>
+    </set-header>
+  </on-error>
+</policies>
