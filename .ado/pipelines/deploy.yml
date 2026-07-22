@@ -91,7 +91,7 @@ stages:
               inlineScript: |
                 # AzureCLI@2 logs in; Terraform uses Azure CLI authentication.
                 cd infrastructure
-                terraform plan -input=false -var-file="environments/dev.tfvars" -out=$(Build.ArtifactStagingDirectory)/dev_plan
+                terraform plan -input=false -detailed-exitcode -var-file="environments/dev.tfvars" -out=$(Build.ArtifactStagingDirectory)/dev_plan
                 PLAN_EXIT=$?
                 echo "Terraform plan exit code: $PLAN_EXIT"
                 if [ $PLAN_EXIT -eq 0 ] || [ $PLAN_EXIT -eq 2 ]; then
