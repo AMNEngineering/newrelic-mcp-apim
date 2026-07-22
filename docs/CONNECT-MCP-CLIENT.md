@@ -91,5 +91,4 @@ curl -sS -X POST "https://amn-wus2-hub-apim-d02.azure-api.net/mcp/newrelic/dev" 
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
 ```
 
-A JSON-RPC result with `serverInfo` = you're in. `401` = bad/expired token; `403` =
-not in the access group. (`test-harness/Invoke-ApimSmokeTest.ps1` does this end to end.)
+A JSON-RPC result with `serverInfo` = you're in. `401` = bad/expired token **or** not authorized (not in the access group). (`test-harness/Invoke-ApimSmokeTest.ps1` does this end to end.)
