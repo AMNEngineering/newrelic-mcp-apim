@@ -8,10 +8,6 @@ terraform {
   }
 }
 
-data "azurerm_api_management" "apim" {
-  name                = var.apim_name
-  resource_group_name = var.resource_group
-}
 
 resource "azurerm_api_management_named_value" "this" {
   for_each = var.named_values
