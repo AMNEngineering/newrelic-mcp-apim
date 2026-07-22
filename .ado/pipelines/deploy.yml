@@ -238,9 +238,7 @@ stages:
               addSpnToEnvironment: true
               azureSubscription: '$(ServiceConnection_Upper)'
               inlineScript: |
-                export ARM_CLIENT_ID=$servicePrincipalId
-                export ARM_CLIENT_SECRET=$servicePrincipalKey
-                export ARM_TENANT_ID=$tenantId
+                # AzureCLI@2 logs in; Terraform uses Azure CLI authentication.
                 cd infrastructure
                 terraform plan -input=false -detailed-exitcode -var-file="environments/int.tfvars" -out=$(Build.ArtifactStagingDirectory)/int_plan
                 PLAN_EXIT=$?
