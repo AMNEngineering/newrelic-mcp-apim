@@ -320,11 +320,9 @@ stages:
                     addSpnToEnvironment: true
                     azureSubscription: '$(ServiceConnection_Upper)'
                     inlineScript: |
-                      export ARM_CLIENT_ID=$servicePrincipalId
-                      export ARM_CLIENT_SECRET=$servicePrincipalKey
-                      export ARM_TENANT_ID=$tenantId
+                      # AzureCLI@2 logs in; Terraform uses Azure CLI authentication.
                       cd infrastructure
-                      terraform apply -input=false $(Build.ArtifactStagingDirectory)/int_plan
+                      terraform apply -input=false $(Build.ArtifactStagingDirectory)/TF_Plan_Artifact_int/int_plan
 
   # ---------------------------------------------------------------------------------- int verify
   - stage: int_verify
