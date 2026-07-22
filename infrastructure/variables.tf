@@ -32,11 +32,19 @@ variable "tenant_id" {
 variable "newrelic_mcp_app_id" {
   description = "Application (client) ID of the dedicated New Relic MCP Entra app (DECISION #2) — the JWT audience the policy validates. ONE app for all New Relic MCP actions — read AND write; New Relic does not distinguish them at the token level, so neither does the app. Create it with identity/New-NewRelicMcpAppReg.ps1 and paste the id here."
   type        = string
+  validation {
+    condition     = can(regex("^[0-9a-fA-F-]{36}$", var.newrelic_mcp_app_id)) && !can(regex("REPLACE|TBD", var.newrelic_mcp_app_id))
+    error_message = "newrelic_mcp_app_id must be a real GUID (not a placeholder like REPLACE/TBD)."
+  }
 }
 
 variable "newrelic_user_group_oid" {
   description = "Object ID of the dedicated New Relic MCP AD group. Access is gated on membership in this group (the policy requires it in the JWT groups claim) — NOT an app role. Group name TBD; create it, then paste its OID here. Read/write is enforced at the marketplace/skill layer, so one group covers both."
   type        = string
+  validation {
+    condition     = can(regex("^[0-9a-fA-F-]{36}$", var.newrelic_user_group_oid)) && !can(regex("REPLACE|TBD", var.newrelic_user_group_oid))
+    error_message = "newrelic_user_group_oid must be a real GUID (not a placeholder like REPLACE/TBD)."
+  }
 }
 
 # --- New Relic key (DECISION #1) ------------------------------------------
