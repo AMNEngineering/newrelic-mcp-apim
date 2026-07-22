@@ -33,7 +33,7 @@ variables:
   StateStorageAccountResourceGroup: 'co-wus2-tfstate-rg-p01'
   StateStorageAccount_Lower: 'amncowus2tfstatesad01'
   StateStorageAccount_Upper: 'amncowus2tfstatesap01'
-  VerticalName: 'newrelic'
+  VerticalName: 'new-relic-mcp'
   PoolName: 'Azure Pipelines'
   system.debug: 'true'
 
@@ -179,14 +179,14 @@ stages:
               inlineScript: |
                 APIM="amn-wus2-hub-apim-d02"; RG="amn-wus2-hub-rg-d01"
                 SUB="e764d23e-759d-4cd4-8b5f-27e4c703f6a8"
-                echo "Verifying API api-newrelic-dev on $APIM..."
+                echo "Verifying API api-new-relic-mcp-dev on $APIM..."
                 API=$(az rest --method GET \
-                  --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.ApiManagement/service/$APIM/apis/api-newrelic-dev?api-version=2022-08-01" \
+                  --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.ApiManagement/service/$APIM/apis/api-new-relic-mcp-dev?api-version=2022-08-01" \
                   --query "{name:name, path:properties.path}" -o json 2>&1)
                 if [ $? -ne 0 ]; then echo "##[error]API not found"; echo "$API"; exit 1; fi
                 echo "API: $API"
                 POLICY=$(az rest --method GET \
-                  --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.ApiManagement/service/$APIM/apis/api-newrelic-dev/policies/policy?api-version=2022-08-01&format=rawxml" \
+                  --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.ApiManagement/service/$APIM/apis/api-new-relic-mcp-dev/policies/policy?api-version=2022-08-01&format=rawxml" \
                   --query "properties.value" -o tsv 2>&1 || true)
                 for needle in "validate-azure-ad-token" "rate-limit-by-key"; do
                   echo "$POLICY" | grep -q "$needle" && echo "  ok: $needle" || { echo "##[error]Policy missing $needle"; exit 1; }
@@ -346,12 +346,12 @@ stages:
                 SUB="06ab2c80-382c-478f-bcd5-5e1afe984092"
                 az account set --subscription "$SUB"
                 API=$(az rest --method GET \
-                  --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.ApiManagement/service/$APIM/apis/api-newrelic-int?api-version=2022-08-01" \
+                  --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.ApiManagement/service/$APIM/apis/api-new-relic-mcp-int?api-version=2022-08-01" \
                   --query "{name:name, path:properties.path}" -o json 2>&1)
                 if [ $? -ne 0 ]; then echo "##[error]API not found"; echo "$API"; exit 1; fi
                 echo "API: $API"
                 POLICY=$(az rest --method GET \
-                  --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.ApiManagement/service/$APIM/apis/api-newrelic-int/policies/policy?api-version=2022-08-01&format=rawxml" \
+                  --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.ApiManagement/service/$APIM/apis/api-new-relic-mcp-int/policies/policy?api-version=2022-08-01&format=rawxml" \
                   --query "properties.value" -o tsv 2>&1 || true)
                 for needle in "validate-azure-ad-token" "rate-limit-by-key"; do
                   echo "$POLICY" | grep -q "$needle" && echo "  ok: $needle" || { echo "##[error]Policy missing $needle"; exit 1; }

@@ -79,11 +79,13 @@ module "named_values" {
 module "mcp_api" {
   source = "./modules/mcp-api"
 
-  apim_name       = var.apim_name
-  resource_group  = var.apim_resource_group
-  service_name    = "newrelic"
-  environment     = var.environment
-  api_path        = "mcp/newrelic/${var.environment}"
+  apim_name      = var.apim_name
+  resource_group = var.apim_resource_group
+  service_name   = "new-relic-mcp"
+  environment    = var.environment
+  # Rides the shared AI-API-RR edge route (/ai/*): the APIM path prefix must be
+  # `ai/...` so AFD (api.{env}.amnhealthcare.io/ai/*) -> AGW -> APIM lines up.
+  api_path        = "ai/new-relic-mcp/${var.environment}"
   backend_url     = var.backend_url
   api_description = "Claude Code / MCP clients -> APIM -> New Relic hosted MCP (${var.environment}). Entra JWT; AD group-gated; New Relic key injected server-side."
 

@@ -17,19 +17,27 @@ on the shared CloudOps service connections into the shared hub APIM.
 
 ## Architecture
 
+Rides the shared **AI-API-RR** edge route (`/ai/*`) per the AMN EdgeTopology
+standard — see [`docs/topology.md`](docs/topology.md).
+
 ```
-Claude Code (MCP client)
-  │  Authorization: Bearer <Entra JWT>   (aud = dedicated NR MCP app; member of the NR MCP AD group)
+MCP client (Claude Code, VS Code, ...)
+  │  GET https://api.{env}.amnhealthcare.io/ai/new-relic-mcp/{env}
+  │  Authorization: Bearer <Entra JWT>   (aud = NR MCP app; member of the NR MCP AD group)
   ▼
-APIM  amn-wus2-hub-apim-{d02,i02,p02}
-  API: api-newrelic-{env}   type=mcp   path: mcp/newrelic/{env}   (native MCP, like amn-passport-mcp)
+AFD  amn-wus2-hub-afd-{env}01   route AI-API-RR (/ai/*)   [TLS, WAF, DDoS]
+  ▼
+AGW  amn-wus2-hub-agw-{env}01   path /ai/*  [WAF 2nd pass]
+  ▼
+APIM  amn-wus2-hub-apim-{env}02  (internal mode — no public host)
+  API: api-new-relic-mcp-{env}   type=mcp   path: ai/new-relic-mcp/{env}   (native MCP, like amn-passport-mcp)
   │  inbound: validate-azure-ad-token (dual audience) + AD group-membership gate (groups claim)
   │  inbound: audit (x-apim-user-id, x-correlation-id)
   │  inbound: rate-limit-by-key (per user OID)          ← flood/cost guardrail
   │  inbound: strip Authorization, inject Api-Key {{nv-newrelic-mcp-api-key}}  ← from Key Vault
-  │  (routing to the backend is native to type=mcp — backendId + mcpProperties; no response buffering)
+  │  (routing native to type=mcp — backendId + mcpProperties; no response buffering)
   ▼
-https://mcp.newrelic.com/mcp/          New Relic hosted MCP (read-only)
+https://mcp.newrelic.com/mcp/          New Relic hosted MCP (external SaaS — APIM egresses out)
 ```
 
 ## Layout
@@ -42,6 +50,7 @@ policies/
   apim-policy-newrelic-mcp.xml   JWT + AD group gate + rate limit + Api-Key injection
 .ado/pipelines/deploy.yml        Build → Plan → Apply (CAB-gated) → Verify, per env
 identity/                        app-registration + access-group bootstrap (New-NewRelicMcpAppReg.ps1)
+docs/topology.md                 per-project edge view (AFD → AGW → APIM), EdgeTopology model
 test-harness/Invoke-ApimSmokeTest.ps1   MCP initialize + tools/list + negative-auth smoke test
 ```
 
@@ -68,7 +77,7 @@ test-harness/Invoke-ApimSmokeTest.ps1   MCP initialize + tools/list + negative-a
 ```jsonc
 "newrelic": {
   "type": "http",
-  "url": "https://<gateway>/mcp/newrelic/<env>",
+  "url": "https://api.<env>.amnhealthcare.io/ai/new-relic-mcp/<env>",
   "headers": { "Authorization": "Bearer ${NEWRELIC_MCP_TOKEN}" }
 }
 ```
