@@ -242,7 +242,7 @@ stages:
                 export ARM_CLIENT_SECRET=$servicePrincipalKey
                 export ARM_TENANT_ID=$tenantId
                 cd infrastructure
-                terraform plan -input=false -var-file="environments/int.tfvars" -out=$(Build.ArtifactStagingDirectory)/int_plan
+                terraform plan -input=false -detailed-exitcode -var-file="environments/int.tfvars" -out=$(Build.ArtifactStagingDirectory)/int_plan
                 PLAN_EXIT=$?
                 echo "Terraform plan exit code: $PLAN_EXIT"
                 if [ $PLAN_EXIT -eq 0 ] || [ $PLAN_EXIT -eq 2 ]; then
