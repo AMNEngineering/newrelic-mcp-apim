@@ -21,7 +21,7 @@ Relic key; APIM injects it server-side.
 **Access model:** being in the group is what grants access. The gateway is read-
 oriented; write actions are gated in the marketplace/skill layer, not by a second
 credential (New Relic has no read-only key — one User key covers both, injected by
-APIM). Ask an admin to add you to the group if you get a `401`/`403`.
+APIM). Ask an admin to add you to the group if you get a `401`.
 
 ## Getting a token
 
