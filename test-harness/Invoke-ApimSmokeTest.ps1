@@ -34,6 +34,7 @@ instance's azure-api.net host for the environment.
 .PARAMETER AppId
 Override the Entra app id. Defaults to newrelic_mcp_app_id from the env tfvars.
 #>
+#Requires -Version 7.0
 [CmdletBinding()]
 param(
     [ValidateSet('dev', 'int', 'prod')]
