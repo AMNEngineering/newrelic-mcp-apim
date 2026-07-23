@@ -41,16 +41,19 @@ module "named_values" {
   resource_group = var.apim_resource_group
 
   named_values = merge(
+    # NOTE: display_name MUST equal the key — APIM resolves policy {{tokens}} by
+    # displayName, and the policy references these by their lowercase name
+    # (matches the amn-passport-mcp / nv-mcp-* convention on this APIM).
     {
       # Entra app id (plain text; policy validates JWT audience against it)
       "newrelic-mcp-app-id" = {
-        display_name = "NewRelic-MCP-App-ID"
+        display_name = "newrelic-mcp-app-id"
         value        = var.newrelic_mcp_app_id
       }
 
       # Authorized AD group OID (policy requires this in the JWT groups claim)
       "nv-newrelic-user-group-oid" = {
-        display_name = "NewRelic-MCP-User-Group-OID"
+        display_name = "nv-newrelic-user-group-oid"
         value        = var.newrelic_user_group_oid
       }
     },
@@ -59,12 +62,12 @@ module "named_values" {
     # (recommended, DECISION #1), otherwise inline (fallback only).
     var.key_vault_name != "" ? {
       "nv-newrelic-mcp-api-key" = {
-        display_name        = "NewRelic-MCP-Api-Key"
+        display_name        = "nv-newrelic-mcp-api-key"
         key_vault_secret_id = "https://${var.key_vault_name}.vault.azure.net/secrets/${var.newrelic_api_key_secret_name}"
       }
       } : {
       "nv-newrelic-mcp-api-key" = {
-        display_name = "NewRelic-MCP-Api-Key"
+        display_name = "nv-newrelic-mcp-api-key"
         secret_value = var.newrelic_api_key
       }
     }
@@ -79,11 +82,13 @@ module "named_values" {
 module "mcp_api" {
   source = "./modules/mcp-api"
 
-  apim_name       = var.apim_name
-  resource_group  = var.apim_resource_group
-  service_name    = "newrelic"
-  environment     = var.environment
-  api_path        = "mcp/newrelic/${var.environment}"
+  apim_name      = var.apim_name
+  resource_group = var.apim_resource_group
+  service_name   = "new-relic-mcp"
+  environment    = var.environment
+  # Rides the shared AI-API-RR edge route (/ai/*): the APIM path prefix must be
+  # `ai/...` so AFD (api.{env}.amnhealthcare.io/ai/*) -> AGW -> APIM lines up.
+  api_path        = "ai/new-relic-mcp/${var.environment}"
   backend_url     = var.backend_url
   api_description = "Claude Code / MCP clients -> APIM -> New Relic hosted MCP (${var.environment}). Entra JWT; AD group-gated; New Relic key injected server-side."
 

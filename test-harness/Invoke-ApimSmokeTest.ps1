@@ -28,8 +28,9 @@ under WIF). AppOnly = client_credentials with <app-id>/.default (needs a secret;
 exercises the bare-GUID audience branch).
 
 .PARAMETER GatewayBaseUrl
-Override the gateway base URL (e.g. an AFD custom domain). Defaults to the APIM
-instance's azure-api.net host for the environment.
+Override the gateway base URL. Defaults to the AFD apex for the environment
+(https://api.<env>.amnhealthcare.io) — APIM is internal-mode, so the client path
+is always via AFD, not the *.azure-api.net host.
 
 .PARAMETER AppId
 Override the Entra app id. Defaults to newrelic_mcp_app_id from the env tfvars.
@@ -54,10 +55,11 @@ function Fail($m) { Write-Host "  FAIL  $m" -ForegroundColor Red; $script:fail++
 function Info($m) { Write-Host "  ->    $m" -ForegroundColor Cyan }
 
 # --- Resolve gateway + app id ------------------------------------------------
-$apimHost = @{ dev = 'amn-wus2-hub-apim-d02'; int = 'amn-wus2-hub-apim-i02'; prod = 'amn-wus2-hub-apim-p02' }[$Environment]
-if (-not $GatewayBaseUrl) { $GatewayBaseUrl = "https://$apimHost.azure-api.net" }
+# Client traffic goes through the AFD apex — APIM is internal-mode (not publicly
+# reachable at *.azure-api.net). The service rides the shared AI-API-RR /ai/* route.
+if (-not $GatewayBaseUrl) { $GatewayBaseUrl = "https://api.$Environment.amnhealthcare.io" }
 # Native type=mcp API: the MCP endpoint IS the API path (no trailing /mcp operation).
-$mcpUrl = "$GatewayBaseUrl/mcp/newrelic/$Environment"
+$mcpUrl = "$GatewayBaseUrl/ai/new-relic-mcp/$Environment"
 
 if (-not $AppId) {
     $tfvars = Join-Path $PSScriptRoot ".." "infrastructure" "environments" "$Environment.tfvars"
