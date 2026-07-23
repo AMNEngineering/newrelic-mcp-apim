@@ -157,7 +157,7 @@ stages:
                     inlineScript: |
                       # AzureCLI@2 logs in; Terraform uses Azure CLI authentication.
                       cd infrastructure
-                      terraform apply -input=false $(Build.ArtifactStagingDirectory)/TF_Plan_Artifact_dev/dev_plan
+                      terraform apply -input=false $(Build.ArtifactStagingDirectory)/dev_plan
 
   # ---------------------------------------------------------------------------------- dev verify
   - stage: dev_verify
@@ -194,7 +194,7 @@ stages:
                 echo "$POLICY" | grep -qi 'set-header name="Api-Key"' && echo "  ok: Api-Key injection" || { echo "##[error]Policy missing Api-Key injection"; exit 1; }
                 NV_COUNT=$(az rest --method GET \
                   --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.ApiManagement/service/$APIM/namedValues?api-version=2022-08-01" \
-                  --query "length(value[?starts_with(properties.displayName, 'NewRelic')])" -o tsv 2>&1)
+                  --query "length(value[?contains(properties.displayName, 'newrelic')])" -o tsv 2>&1)
                 echo "NewRelic named values: $NV_COUNT"
                 [ "$NV_COUNT" -ge 2 ] && echo "##[section]Dev verify PASSED" || { echo "##[error]Expected >=2 NewRelic named values"; exit 1; }
 
@@ -320,7 +320,7 @@ stages:
                     inlineScript: |
                       # AzureCLI@2 logs in; Terraform uses Azure CLI authentication.
                       cd infrastructure
-                      terraform apply -input=false $(Build.ArtifactStagingDirectory)/TF_Plan_Artifact_int/int_plan
+                      terraform apply -input=false $(Build.ArtifactStagingDirectory)/int_plan
 
   # ---------------------------------------------------------------------------------- int verify
   - stage: int_verify
