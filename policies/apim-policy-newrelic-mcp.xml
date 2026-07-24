@@ -4,12 +4,19 @@
   Rendered by Terraform templatefile(): $${...} placeholders are TF vars,
   {{...}} are APIM named values.
 
-  Flow: validate Entra JWT (dual audience + required groups claim = membership in
-  the dedicated New Relic MCP AD group) -> audit -> per-user rate limit -> strip
-  client auth + inject New Relic key. Routing to New Relic's hosted MCP is native
-  to the type=mcp API (backendId + mcpProperties), so the policy does not route.
-  New Relic uses a static Api-Key (no OAuth token exchange), so this is much
-  simpler than the Salesforce reference.
+  Flow: validate Entra JWT (dual audience, v1+v2 issuers) -> audit -> per-user rate
+  limit -> strip client auth + inject New Relic key. Routing to New Relic's hosted
+  MCP is native to the type=mcp API (backendId + mcpProperties), so the policy does
+  not route. New Relic uses a static Api-Key (no OAuth token exchange), so this is
+  much simpler than the Salesforce reference.
+
+  AuthZ is enforced at token ISSUANCE, not here: the enterprise app has
+  appRoleAssignmentRequired=true, so Entra only mints a token for direct members of
+  an app-assigned access group (the NR MCP access group + the assigned job-role
+  groups). The gateway therefore trusts any valid, audience-scoped token from our
+  tenant and does NOT re-check a `groups` claim — v1 tokens from
+  `az account get-access-token` don't emit one, and nested-group membership never
+  flows into the ApplicationGroup claim anyway.
 
   NO response buffering: MCP is streamable HTTP (chunked / text/event-stream),
   so the policy never reads the response body.
@@ -18,24 +25,28 @@
   <inbound>
     <base />
 
-    <!-- 1. Client authN + authZ: Entra JWT with a required groups claim. Access
-            is gated by membership in the dedicated New Relic MCP AD group (OID in
-            nv-newrelic-user-group-oid) — NOT an app role. New Relic does not
-            distinguish read vs write at the token level, so group membership grants
-            access to the New Relic MCP; read/write is enforced at the marketplace +
-            skill layer, not here.
-            Dual audience accepts both the api:// URI and bare-GUID forms. -->
-    <validate-azure-ad-token tenant-id="${tenant_id}" header-name="Authorization" failed-validation-httpcode="401">
+    <!-- 1. Client authN: validate the Entra JWT. AuthZ (who is allowed) is enforced
+            upstream at token issuance via appRoleAssignmentRequired=true on the
+            enterprise app, so this only proves the token is a genuine, unexpired
+            Entra token minted for THIS app (audience) by OUR tenant (issuer).
+            - openid-config points at the v2 metadata (its JWKS validates v1 + v2
+              signatures — same signing keys).
+            - <issuers> accepts BOTH the v1 (sts.windows.net) and v2
+              (login.microsoftonline.com/.../v2.0) issuers, so a v1 token from
+              `az account get-access-token` and a v2 token from an MSAL client are
+              both accepted.
+            - Dual audience accepts both the api:// URI and bare-GUID forms. -->
+    <validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized. A valid Entra token for the New Relic MCP gateway is required (membership in an assigned access group).">
+      <openid-config url="https://login.microsoftonline.com/${tenant_id}/v2.0/.well-known/openid-configuration" />
+      <issuers>
+        <issuer>https://sts.windows.net/${tenant_id}/</issuer>
+        <issuer>https://login.microsoftonline.com/${tenant_id}/v2.0</issuer>
+      </issuers>
       <audiences>
         <audience>api://{{newrelic-mcp-app-id}}</audience>
         <audience>{{newrelic-mcp-app-id}}</audience>
       </audiences>
-      <required-claims>
-        <claim name="groups" match="any">
-          <value>{{nv-newrelic-user-group-oid}}</value>
-        </claim>
-      </required-claims>
-    </validate-azure-ad-token>
+    </validate-jwt>
 
     <!-- 2. Audit: extract caller identity + correlation id. -->
     <set-variable name="userOid" value="@{
