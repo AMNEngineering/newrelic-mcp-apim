@@ -43,7 +43,7 @@ Write-Host ""
 Write-Host "=== NR MCP app — expose scope + pre-authorize clients ===" -ForegroundColor Cyan
 Write-Host "  App (audience) : api://$AppId"
 Write-Host "  Scope          : user_impersonation (delegated)"
-Write-Host "  Pre-authorize  : $ClientId (Azure CLI)$([string]::Join('', ($ExtraClientIds | ForEach-Object { ', ' + $_ })))"
+Write-Host "  Pre-authorize  : $((@($ClientId) + $ExtraClientIds) -join ', ')"
 Write-Host ""
 if (-not $Execute) { Write-Host "DRY-RUN — re-run with -Execute to elevate + apply." -ForegroundColor Yellow; return }
 
