@@ -52,9 +52,21 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# Make failed `az` calls (non-zero exit) terminate the script instead of barreling
+# on with an empty value. Requires PS 7.3+.
+$PSNativeCommandUseErrorActionPreference = $true
 $graph = 'https://graph.microsoft.com/v1.0'
 function Info($m) { Write-Host "  -> $m" -ForegroundColor Cyan }
 function Ok($m) { Write-Host "  OK $m" -ForegroundColor Green }
+function Die($m) { Write-Host "  FAIL $m" -ForegroundColor Red; exit 1 }
+
+$rolesHint = @'
+This step needs Entra directory roles your account does not currently have:
+  - Application Administrator (or Application Developer) — to register the app
+  - Groups Administrator — to create the security group
+Activate them via PIM (portal -> Entra ID -> PIM -> My roles), or have an identity
+admin run this script. Then re-run. Nothing was created by the failed run.
+'@
 
 # --- Find or create the app -------------------------------------------------
 Info "Looking for existing app '$DisplayName'..."
@@ -65,7 +77,17 @@ if ($appId) {
 else {
     if (-not $PSCmdlet.ShouldProcess($DisplayName, "Create Entra app registration")) { return }
     Info "Creating app '$DisplayName'..."
-    $appId = az ad app create --display-name $DisplayName --sign-in-audience AzureADMyOrg --query appId -o tsv
+    try {
+        $appId = az ad app create --display-name $DisplayName --sign-in-audience AzureADMyOrg --query appId -o tsv
+    }
+    catch {
+        Write-Host $rolesHint -ForegroundColor Yellow
+        Die "Could not register the app '$DisplayName'. $_"
+    }
+    if ([string]::IsNullOrWhiteSpace($appId)) {
+        Write-Host $rolesHint -ForegroundColor Yellow
+        Die "App registration returned no appId (insufficient Entra privileges)."
+    }
     Ok "Created app: $appId"
 }
 
@@ -99,7 +121,17 @@ if ($GroupName) {
     elseif ($PSCmdlet.ShouldProcess($GroupName, "Create security group")) {
         $nick = ($GroupName -replace '[^a-zA-Z0-9]', '')
         Info "Creating SECURITY group '$GroupName'..."
-        $groupOid = az ad group create --display-name $GroupName --mail-nickname $nick --query id -o tsv
+        try {
+            $groupOid = az ad group create --display-name $GroupName --mail-nickname $nick --query id -o tsv
+        }
+        catch {
+            Write-Host $rolesHint -ForegroundColor Yellow
+            Die "Could not create the security group '$GroupName' (need Groups Administrator). $_"
+        }
+        if ([string]::IsNullOrWhiteSpace($groupOid)) {
+            Write-Host $rolesHint -ForegroundColor Yellow
+            Die "Group creation returned no OID (insufficient Entra privileges)."
+        }
         Ok "Created group: $groupOid"
     }
 
