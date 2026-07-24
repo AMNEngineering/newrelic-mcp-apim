@@ -117,6 +117,12 @@ finally {
 # --- Stage 4: VERIFY-AS-DAILY-DRIVER ----------------------------------------
 Write-Host ""
 Write-Host "--- Verify (daily-driver read) ---" -ForegroundColor Cyan
+# Ensure the daily az verify trusts the Zscaler-intercepted TLS even if this shell
+# session hasn't re-sourced ~/.zshrc yet (else the read SSL-fails -> false negative).
+if (-not $env:REQUESTS_CA_BUNDLE) {
+    $macBundle = Join-Path $HOME '.az-ca-bundle.pem'
+    if (Test-Path $macBundle) { $env:REQUESTS_CA_BUNDLE = $macBundle }
+}
 $azUser = az account show --query "user.name" -o tsv --only-show-errors 2>$null
 if (-not $azUser) { throw "Stage 4 needs a daily-driver az session. Run 'az login' as your daily account." }
 if ($azUser -like '*.adm*') { throw "Stage 4 requires a daily-driver context but az CLI is '$azUser' (.adm). Run 'az logout' + 'az login' as daily." }
