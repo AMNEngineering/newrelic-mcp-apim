@@ -38,14 +38,14 @@
             - Dual audience accepts both the api:// URI and bare-GUID forms. -->
     <validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized. A valid Entra token for the New Relic MCP gateway is required (membership in an assigned access group).">
       <openid-config url="https://login.microsoftonline.com/${tenant_id}/v2.0/.well-known/openid-configuration" />
-      <issuers>
-        <issuer>https://sts.windows.net/${tenant_id}/</issuer>
-        <issuer>https://login.microsoftonline.com/${tenant_id}/v2.0</issuer>
-      </issuers>
       <audiences>
         <audience>api://{{newrelic-mcp-app-id}}</audience>
         <audience>{{newrelic-mcp-app-id}}</audience>
       </audiences>
+      <issuers>
+        <issuer>https://sts.windows.net/${tenant_id}/</issuer>
+        <issuer>https://login.microsoftonline.com/${tenant_id}/v2.0</issuer>
+      </issuers>
     </validate-jwt>
 
     <!-- 2. Audit: extract caller identity + correlation id. -->
