@@ -39,7 +39,7 @@ variable "newrelic_mcp_app_id" {
 }
 
 variable "newrelic_user_group_oid" {
-  description = "Object ID of the dedicated New Relic MCP AD group. Access is gated on membership in this group (the policy requires it in the JWT groups claim) — NOT an app role. Group name TBD; create it, then paste its OID here. Read/write is enforced at the marketplace/skill layer, so one group covers both."
+  description = "Object ID of the dedicated New Relic MCP AD group AZ_JobRole_Observability_NewRelicMcp_User. Access is gated on membership in this group (the policy requires it in the JWT groups claim) — NOT an app role. Create it with identity/New-NewRelicMcpAppReg.ps1, then paste its OID here. Read/write is enforced at the marketplace/skill layer, so one group covers both."
   type        = string
   validation {
     condition     = can(regex("^[0-9a-fA-F-]{36}$", var.newrelic_user_group_oid)) && !can(regex("REPLACE|TBD", var.newrelic_user_group_oid))

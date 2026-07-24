@@ -13,8 +13,8 @@ output "api_path" {
   value       = local.api_path
 }
 
-output "api_url" {
-  description = "Full MCP endpoint URL clients connect to"
+output "apim_internal_url" {
+  description = "Internal APIM gateway URL for this API. NOT client-facing — APIM is internal-mode; clients use the AFD apex (see root apim_mcp_endpoint output)."
   value       = "${data.azurerm_api_management.apim.gateway_url}/${local.api_path}"
 }
 

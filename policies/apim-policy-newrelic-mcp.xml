@@ -1,7 +1,7 @@
 <!--
   New Relic MCP — API-level policy.
 
-  Rendered by Terraform templatefile(): ${...} placeholders are TF vars,
+  Rendered by Terraform templatefile(): $${...} placeholders are TF vars,
   {{...}} are APIM named values.
 
   Flow: validate Entra JWT (dual audience + required groups claim = membership in

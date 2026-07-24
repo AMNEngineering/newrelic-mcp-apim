@@ -8,15 +8,15 @@ Relic key; APIM injects it server-side.
 
 | | |
 |---|---|
-| **Endpoint URL** | `https://<gateway>/mcp/newrelic/<env>` |
-| **dev** | `https://amn-wus2-hub-apim-d02.azure-api.net/mcp/newrelic/dev` |
-| **int** | `https://amn-wus2-hub-apim-i02.azure-api.net/mcp/newrelic/int` |
+| **Endpoint URL** | `https://api.<env>.amnhealthcare.io/ai/new-relic-mcp/<env>` |
+| **dev** | `https://api.dev.amnhealthcare.io/ai/new-relic-mcp/dev` |
+| **int** | `https://api.int.amnhealthcare.io/ai/new-relic-mcp/int` |
 | **Auth** | Entra **bearer token** for audience `api://<newrelic-mcp-app-id>` |
 | **Authorization** | membership in the **`AZ_JobRole_Observability_NewRelicMcp_User`** AD group |
 
-> If your org uses an Azure Front Door custom domain (e.g. `api.dev.amnhealthcare.io`)
-> in front of APIM, use that host instead of the `*.azure-api.net` gateway host —
-> the `/mcp/newrelic/<env>` path is the same.
+> Always use the **AFD apex host** (`api.<env>.amnhealthcare.io`). APIM runs in
+> internal mode (private IPs only) — the `*.azure-api.net` host is not routable.
+> The service rides the shared **AI-API-RR** edge route (`/ai/*`).
 
 **Access model:** being in the group is what grants access. The gateway is read-
 oriented; write actions are gated in the marketplace/skill layer, not by a second
@@ -33,8 +33,9 @@ az account get-access-token --resource "api://<newrelic-mcp-app-id>" --query acc
 
 The token is short-lived and **baked at client launch** — a mid-session `401`
 means it aged out, so restart the client to re-mint it (same pattern as the Claude
-Code model gateway). If your Claude Code model-gateway token already carries the
-right audience, it will validate here too.
+Code model gateway). Note the audience is the **dedicated NR MCP app**
+(`api://<newrelic-mcp-app-id>`), not the model-gateway audience — mint a token for
+this app specifically.
 
 ## Client configuration
 
@@ -48,7 +49,7 @@ The `amn-ops-observability` marketplace plugin ships this (URL + token come from
   "mcpServers": {
     "newrelic": {
       "type": "http",
-      "url": "https://amn-wus2-hub-apim-d02.azure-api.net/mcp/newrelic/dev",
+      "url": "https://api.dev.amnhealthcare.io/ai/new-relic-mcp/dev",
       "headers": { "Authorization": "Bearer ${NEWRELIC_MCP_TOKEN}" }
     }
   }
@@ -62,7 +63,7 @@ The `amn-ops-observability` marketplace plugin ships this (URL + token come from
   "servers": {
     "newrelic": {
       "type": "http",
-      "url": "https://amn-wus2-hub-apim-d02.azure-api.net/mcp/newrelic/dev",
+      "url": "https://api.dev.amnhealthcare.io/ai/new-relic-mcp/dev",
       "headers": { "Authorization": "Bearer ${input:newrelic_token}" }
     }
   }
@@ -84,7 +85,7 @@ Point it at the endpoint URL as a **streamable-HTTP MCP server** and send
 
 ```bash
 TOKEN=$(az account get-access-token --resource "api://<newrelic-mcp-app-id>" --query accessToken -o tsv)
-curl -sS -X POST "https://amn-wus2-hub-apim-d02.azure-api.net/mcp/newrelic/dev" \
+curl -sS -X POST "https://api.dev.amnhealthcare.io/ai/new-relic-mcp/dev" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
