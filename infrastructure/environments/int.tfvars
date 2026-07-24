@@ -13,7 +13,7 @@ tenant_id = "6232c2ec-fa42-4f27-92cd-787913fba489"
 # for the pilot (one app for read + write), used as the JWT audience. Create with
 # identity/New-NewRelicMcpAppReg.ps1; paste the Application (client) ID here.
 # A per-env split is optional future hardening.
-newrelic_mcp_app_id = "REPLACE-WITH-newrelic-mcp-APP-ID"
+newrelic_mcp_app_id = "709bbe94-f759-422f-b7fa-28f1fde28ae1"
 
 # Authorized AD group (DECISION #2): membership in
 # AZ_JobRole_Observability_NewRelicMcp_User gates access (groups claim), not an

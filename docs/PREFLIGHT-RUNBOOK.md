@@ -17,11 +17,19 @@ Constants:
 ## 0. Prerequisite — PR #2 merged to master ✅
 The pipeline runs off `master`. (Merged during prep.)
 
-## 1. Identity — create the app registration + access group
+## 1. Identity — app registration (Graph) + access group (on-prem AD)
+
+### 1a. On-prem AD group (separate provisioning; has lead time)
+`AZ_JobRole_Observability_NewRelicMcp_User` is an **on-prem AD** group (all
+`AZ_JobRole_*` groups are `onPremisesSyncEnabled`), so it is created in on-prem AD
+(`ahs.int`) via your AD/identity process — **not** via Graph/this script — and syncs
+to Entra (~30 min). Add the intended developers to it in AD (managed independently).
+
+### 1b. App registration + group assignment (Graph, via the script)
 Uses AMN's sanctioned ADM pattern (Microsoft Graph SDK via `Connect-AdmGraph.ps1`,
-**not** `az login`). It elevates via **device-code sign-in as your `.adm` account**
-— that's where you enter the Safeguard-checked-out password + complete OneLogin MFA
-— runs the Graph writes, disconnects, then verifies from your daily account.
+**not** `az login`). Elevates via **device-code sign-in as your `.adm` account**
+— where you enter the Safeguard-checked-out password + complete OneLogin MFA — creates
+the app, and (once the AD group has synced) finds + assigns it, then verifies.
 
 One-time setup on your Mac:
 ```bash
@@ -34,15 +42,12 @@ Run it (dry-run first, then execute):
 pwsh ./identity/New-NewRelicMcpAppReg.ps1            # prints the plan, no changes
 pwsh ./identity/New-NewRelicMcpAppReg.ps1 -Execute   # device-code prompt -> sign in as .adm
 ```
-Your `.adm` account must hold **Application Administrator/Developer** + **Groups
-Administrator** (PIM-activate first if only eligible). Creates app "AMN New Relic MCP"
-(`api://<appId>`) + group `AZ_JobRole_Observability_NewRelicMcp_User` (ApplicationGroup
-claims, assigned to the app), then prints **APP ID** + **GROUP OID** — copy both.
-Then add the intended developers to the group (Entra → Groups →
-`AZ_JobRole_Observability_NewRelicMcp_User` → Members), or:
-```bash
-az ad group member add --group AZ_JobRole_Observability_NewRelicMcp_User --member-id <userObjectId>
-```
+Your `.adm` account needs **Application Administrator/Developer** (app writes; group
+creation is not attempted). Creates app "AMN New Relic MCP" (`api://<appId>`); once
+the AD group (1a) has synced, finds + assigns it (ApplicationGroup claims) and prints
+**APP ID** + **GROUP OID**. If the group hasn't synced yet, it creates the app, says
+the group link is pending, and you re-run after sync. Group membership is managed in
+**on-prem AD** (1a), not Entra.
 
 ## 2. Fill the two GUIDs into the tfvars
 Edit `infrastructure/environments/dev.tfvars` (repeat for int/prod when those deploy):
