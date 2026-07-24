@@ -19,20 +19,29 @@ The pipeline runs off `master`. (Merged during prep.)
 
 ## 1. Identity — app registration (Graph) + access group (on-prem AD)
 
-### 1a. On-prem AD group (service desk / AD admin; ~30 min sync)
+### 1a. On-prem AD group (~30 min sync to Entra)
 `AZ_JobRole_Observability_NewRelicMcp_User` is an **on-prem AD** group (all
 `AZ_JobRole_*` groups are `onPremisesSyncEnabled`) — created in AD (`ahs.int`), then
-synced to Entra (~30 min). Run **`identity/New-NewRelicMcpAdGroup.ps1`** on a **Windows
-host with the `ActiveDirectory` module (RSAT)** + DC line-of-sight (the service desk's
-environment — not the Mac; there's no AD module for macOS). It auto-discovers the OU +
-scope from the existing `AZ_JobRole_*` groups and lands the new one in the same place:
-```powershell
-.\identity\New-NewRelicMcpAdGroup.ps1 -WhatIf         # preview OU + plan
-.\identity\New-NewRelicMcpAdGroup.ps1                 # create it
-.\identity\New-NewRelicMcpAdGroup.ps1 -Members jdoe,asmith   # create + add members
+synced to Entra (~30 min). Both scripts auto-discover the OU + `groupType` from the
+existing `AZ_JobRole_*` groups so the new one lands in the same place/shape, and are
+idempotent with a preview.
+
+**From macOS/Linux over the VPN (LDAP — no RSAT):** run with your on-prem `.adm`:
+```bash
+pwsh ./identity/New-NewRelicMcpAdGroup.Ldap.ps1            # bind + show the OU it would use
+pwsh ./identity/New-NewRelicMcpAdGroup.Ldap.ps1 -Execute   # create it
 ```
-Membership is managed here in AD, ongoing, by the service desk (`Add-ADGroupMember` or
-ADUC) — deliberately, not tied to any other New Relic group.
+(Prompts for your `.adm` domain credential — enter the Safeguard-checked-out password.
+If the DC LDAPS cert isn't trusted on the Mac, add `-SkipCertCheck`; pass `-Server <DC FQDN>`
+if `ahs.int` doesn't resolve to a DC.)
+
+**From a Windows host with the `ActiveDirectory` module (service desk):**
+```powershell
+.\identity\New-NewRelicMcpAdGroup.ps1 -WhatIf
+.\identity\New-NewRelicMcpAdGroup.ps1 [-Members jdoe,asmith]
+```
+Membership is managed in AD, ongoing (service desk) — deliberately, not tied to any
+other New Relic group.
 
 ### 1b. App registration + group assignment (Graph, via the script)
 Uses AMN's sanctioned ADM pattern (Microsoft Graph SDK via `Connect-AdmGraph.ps1`,
