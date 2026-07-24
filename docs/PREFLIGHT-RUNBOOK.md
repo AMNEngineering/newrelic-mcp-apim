@@ -18,19 +18,26 @@ Constants:
 The pipeline runs off `master`. (Merged during prep.)
 
 ## 1. Identity — create the app registration + access group
-The script **self-elevates**: it signs your `<you>.adm` account into an isolated
-`AZURE_CONFIG_DIR`, runs the privileged Graph commands, then discards that session
-— your daily `az` login (subscription and all) is never touched. Your `.adm`
-account must hold **Application Administrator/Developer** + **Groups Administrator**
-(activate via PIM first if eligible).
+Uses AMN's sanctioned ADM pattern (Microsoft Graph SDK via `Connect-AdmGraph.ps1`,
+**not** `az login`). It elevates via **device-code sign-in as your `.adm` account**
+— that's where you enter the Safeguard-checked-out password + complete OneLogin MFA
+— runs the Graph writes, disconnects, then verifies from your daily account.
+
+One-time setup on your Mac:
 ```bash
-pwsh ./identity/New-NewRelicMcpAppReg.ps1
-# A browser opens — sign in as <you>.adm@amnhealthcare.com.
-# Creates app "AMN New Relic MCP" (api://<appId>) + group
-# AZ_JobRole_Observability_NewRelicMcp_User, ApplicationGroup claims, assigns the
-# group to the app, then de-elevates. Prints APP ID and GROUP OID — copy both.
-# Headless/SSH: add -UseDeviceCode.
+pwsh -Command "Install-Module Microsoft.Graph -Scope CurrentUser -Force"
+# (Connect-AdmGraph.ps1 is read from your ~/amn-ops-ai-plugin-marketplace checkout;
+#  or pass -ConnectAdmGraphPath / set $env:AMN_MARKETPLACE_ROOT.)
 ```
+Run it (dry-run first, then execute):
+```bash
+pwsh ./identity/New-NewRelicMcpAppReg.ps1            # prints the plan, no changes
+pwsh ./identity/New-NewRelicMcpAppReg.ps1 -Execute   # device-code prompt -> sign in as .adm
+```
+Your `.adm` account must hold **Application Administrator/Developer** + **Groups
+Administrator** (PIM-activate first if only eligible). Creates app "AMN New Relic MCP"
+(`api://<appId>`) + group `AZ_JobRole_Observability_NewRelicMcp_User` (ApplicationGroup
+claims, assigned to the app), then prints **APP ID** + **GROUP OID** — copy both.
 Then add the intended developers to the group (Entra → Groups →
 `AZ_JobRole_Observability_NewRelicMcp_User` → Members), or:
 ```bash
