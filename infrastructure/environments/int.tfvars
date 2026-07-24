@@ -18,7 +18,7 @@ newrelic_mcp_app_id = "709bbe94-f759-422f-b7fa-28f1fde28ae1"
 # Authorized AD group (DECISION #2): membership in
 # AZ_JobRole_Observability_NewRelicMcp_User gates access (groups claim), not an
 # app role. Create it via the identity script, then paste its Object ID here.
-newrelic_user_group_oid = "REPLACE-WITH-newrelic-mcp-GROUP-OID"
+newrelic_user_group_oid = "0986d5a9-7079-4b6e-bb07-d45555623d6c"
 
 key_vault_name               = "co-wus2-newrelic-kv-p01"
 newrelic_api_key_secret_name = "AMNHealthcare-NR-Terraform-UserKey"
