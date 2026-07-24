@@ -18,7 +18,7 @@ newrelic_mcp_app_id = "709bbe94-f759-422f-b7fa-28f1fde28ae1"
 # Authorized AD group (DECISION #2): access is gated on membership in
 # AZ_JobRole_Observability_NewRelicMcp_User (groups claim), NOT an app role.
 # Create it with identity/New-NewRelicMcpAppReg.ps1, then paste its Object ID here.
-newrelic_user_group_oid = "REPLACE-WITH-newrelic-mcp-GROUP-OID"
+newrelic_user_group_oid = "0986d5a9-7079-4b6e-bb07-d45555623d6c"
 
 # New Relic User key via Key Vault reference (DECISION #1 — never inline in state).
 key_vault_name               = "co-wus2-newrelic-kv-p01"
