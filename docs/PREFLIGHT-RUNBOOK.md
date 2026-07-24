@@ -76,6 +76,21 @@ newrelic_user_group_oid = "<GROUP OID from step 1>"
 Commit + push to master. (Plan is blocked while these are `REPLACE-WITH-…` — a
 deliberate GUID validation guard.) *Claude can make this edit for you given the values.*
 
+## 3 + 4. Azure resource prerequisites (one elevated run)
+Both step 3 (KV grant) and step 4 (state container) are ADM-privileged writes your
+daily account can't do. Easiest: run them together under elevation with
+**`identity/Set-NewRelicMcpAzurePrereqs.ps1`** (Connect-AdmAzure device-code as your
+`.adm`, same pattern as the identity script). Needs `Install-Module Az -Scope CurrentUser`.
+```bash
+pwsh ./identity/Set-NewRelicMcpAzurePrereqs.ps1            # dry-run (plan)
+pwsh ./identity/Set-NewRelicMcpAzurePrereqs.ps1 -Execute   # device-code as .adm -> grant + container -> verify
+```
+(If a step 403s under elevation, your `.adm` is missing that role: **User Access
+Administrator/Owner** on the KV for the grant, **Storage Blob Data Contributor** on
+the tfstate account for the container.)
+
+The equivalent raw commands (e.g. to run in Azure Cloud Shell PIM-elevated instead):
+
 ## 3. Grant APIM's managed identity read access to the Key Vault
 Needs RBAC write on the vault (ADM). The KV-reference named value fails to create without this.
 ```bash
