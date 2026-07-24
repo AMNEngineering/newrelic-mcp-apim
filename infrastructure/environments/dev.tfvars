@@ -13,7 +13,7 @@ tenant_id = "6232c2ec-fa42-4f27-92cd-787913fba489"
 # Dedicated New Relic MCP Entra app (DECISION #2): ONE app for all NR MCP actions
 # (read + write), used as the JWT audience. Create it with
 # identity/New-NewRelicMcpAppReg.ps1 and paste the Application (client) ID here.
-newrelic_mcp_app_id = "REPLACE-WITH-newrelic-mcp-APP-ID"
+newrelic_mcp_app_id = "709bbe94-f759-422f-b7fa-28f1fde28ae1"
 
 # Authorized AD group (DECISION #2): access is gated on membership in
 # AZ_JobRole_Observability_NewRelicMcp_User (groups claim), NOT an app role.

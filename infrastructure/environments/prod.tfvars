@@ -13,7 +13,7 @@ tenant_id = "6232c2ec-fa42-4f27-92cd-787913fba489"
 
 # Dedicated New Relic MCP Entra app (DECISION #2). For the pilot this is the same
 # single app as dev/int; a dedicated prod app is optional future hardening.
-newrelic_mcp_app_id = "TBD-newrelic-mcp-PROD-APP-ID"
+newrelic_mcp_app_id = "709bbe94-f759-422f-b7fa-28f1fde28ae1"
 
 # Authorized AD group (DECISION #2): membership in
 # AZ_JobRole_Observability_NewRelicMcp_User gates access (groups claim). Confirm

@@ -3,8 +3,12 @@
 <#
 .SYNOPSIS
 Create (or find) the dedicated Entra app registration for the New Relic MCP APIM
-gateway + the AD security group that gates access, using AMN's canonical ADM
-elevation pattern. Outputs the Application (client) ID and the group Object ID.
+gateway, and assign the access group to it, using AMN's canonical ADM elevation
+pattern. Outputs the Application (client) ID and the group Object ID.
+
+NOTE: the access group AZ_JobRole_Observability_NewRelicMcp_User is an ON-PREM AD
+group (AZ_JobRole_* are onPremisesSyncEnabled) — it must be provisioned in on-prem
+AD and synced to Entra separately; this script finds + assigns it, never creates it.
 
 .DESCRIPTION
 These are PREREQUISITES the Terraform contract references (JWT audience + the
@@ -57,15 +61,15 @@ $ErrorActionPreference = 'Stop'
 function Info($m) { Write-Host "  -> $m" -ForegroundColor Cyan }
 function Ok($m) { Write-Host "  OK $m" -ForegroundColor Green }
 
-$scopes = @('Application.ReadWrite.All', 'AppRoleAssignment.ReadWrite.All', 'Group.ReadWrite.All', 'Directory.Read.All')
+$scopes = @('Application.ReadWrite.All', 'AppRoleAssignment.ReadWrite.All', 'Group.Read.All', 'Directory.Read.All')
 
 # --- Plan (always shown) ----------------------------------------------------
 Write-Host ""
 Write-Host "=== New Relic MCP identity plan ===" -ForegroundColor Cyan
 Write-Host "  App registration : $DisplayName  (single-tenant; identifier URI api://<appId>)"
 Write-Host "  groups claim     : ApplicationGroup (only the access group emits — overage-proof)"
-Write-Host "  Access group     : $GroupName  (security group; membership gates access)"
-Write-Host "  Group -> app      : appRoleAssignment (default access) so the group emits in the token"
+Write-Host "  Access group     : $GroupName  (on-prem AD synced — provisioned in AD, NOT created here)"
+Write-Host "  Group -> app      : appRoleAssignment (default access) once the synced group is found"
 Write-Host "  Tenant           : $TenantId"
 Write-Host "  Elevation        : Connect-AdmGraph.ps1 (device-code sign-in as .adm) — Graph SDK, not az login"
 Write-Host "  Graph scopes     : $($scopes -join ', ')"
@@ -128,29 +132,32 @@ try {
     if ($existingSp.Count -gt 0) { $spId = $existingSp[0].Id; Ok "Service principal exists: $spId" }
     else { $spId = (New-MgServicePrincipal -AppId $appId).Id; Ok "Service principal created: $spId" }
 
-    # Access group (security group)
+    # Access group — AZ_JobRole_* groups are ON-PREM AD objects (onPremisesSyncEnabled),
+    # so this script does NOT create it. Provision it in on-prem AD (ahs.int), let it
+    # sync to Entra (~30 min), then this finds it and assigns it to the app.
     $existingGrp = @(Get-MgGroup -Filter "displayName eq '$GroupName'" -All)
     if ($existingGrp.Count -gt 0) {
         $groupOid = $existingGrp[0].Id
-        Ok "Found existing group: $groupOid"
-    }
-    else {
-        $nick = ($GroupName -replace '[^a-zA-Z0-9]', '')
-        Info "Creating SECURITY group '$GroupName'..."
-        $groupOid = (New-MgGroup -DisplayName $GroupName -MailEnabled:$false -MailNickname $nick -SecurityEnabled -GroupTypes @()).Id
-        Ok "Created group: $groupOid"
-    }
+        Ok "Found group: $groupOid"
 
-    # Assign the group to the app (ApplicationGroup emits only app-assigned groups).
-    # Default-access app role = all-zero GUID.
-    $assigned = @(Get-MgGroupAppRoleAssignment -GroupId $groupOid | Where-Object { $_.ResourceId -eq $spId })
-    if ($assigned.Count -gt 0) {
-        Ok "Group already assigned to the app."
+        # Assign the group to the app (ApplicationGroup emits only app-assigned
+        # groups). Default-access app role = all-zero GUID.
+        $assigned = @(Get-MgGroupAppRoleAssignment -GroupId $groupOid | Where-Object { $_.ResourceId -eq $spId })
+        if ($assigned.Count -gt 0) {
+            Ok "Group already assigned to the app."
+        }
+        else {
+            Info "Assigning group to the app..."
+            New-MgGroupAppRoleAssignment -GroupId $groupOid -PrincipalId $groupOid -ResourceId $spId -AppRoleId '00000000-0000-0000-0000-000000000000' | Out-Null
+            Ok "Group assigned — its OID will now appear in the groups claim."
+        }
     }
     else {
-        Info "Assigning group to the app..."
-        New-MgGroupAppRoleAssignment -GroupId $groupOid -PrincipalId $groupOid -ResourceId $spId -AppRoleId '00000000-0000-0000-0000-000000000000' | Out-Null
-        Ok "Group assigned — its OID will now appear in the groups claim."
+        Write-Host ""
+        Write-Host "NOTE: group '$GroupName' is not in Entra yet." -ForegroundColor Yellow
+        Write-Host "  AZ_JobRole_* groups are on-prem AD objects — create it in on-prem AD (ahs.int)," -ForegroundColor Yellow
+        Write-Host "  wait for Entra Connect sync (~30 min), then re-run this script to assign it." -ForegroundColor Yellow
+        Write-Host "  The app registration above is already created; only the group link is pending." -ForegroundColor Yellow
     }
 }
 finally {
@@ -177,15 +184,20 @@ if ($groupOid) {
 
 Write-Host ""
 Write-Host "=============================================================" -ForegroundColor Green
-Write-Host " New Relic MCP identity ready" -ForegroundColor Green
+Write-Host " New Relic MCP identity" -ForegroundColor Green
 Write-Host "   Application (client) ID : $appId" -ForegroundColor Green
 Write-Host "   Audience                : api://$appId" -ForegroundColor Green
-Write-Host "   Access group OID         : $groupOid" -ForegroundColor Green
+if ($groupOid) { Write-Host "   Access group OID         : $groupOid" -ForegroundColor Green }
+else { Write-Host "   Access group             : PENDING — provision $GroupName in on-prem AD, then re-run" -ForegroundColor Yellow }
 Write-Host "=============================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next — set in infrastructure/environments/*.tfvars:"
 Write-Host "  newrelic_mcp_app_id     = `"$appId`""
-Write-Host "  newrelic_user_group_oid = `"$groupOid`""
-Write-Host ""
-Write-Host "Then add members deliberately (managed independently — do NOT tie to other NR memberships):"
-Write-Host "  Entra -> Groups -> $GroupName -> Members -> Add"
+if ($groupOid) {
+    Write-Host "  newrelic_user_group_oid = `"$groupOid`""
+    Write-Host ""
+    Write-Host "Then add members to $GroupName in on-prem AD (managed independently — do NOT tie to other NR memberships)."
+}
+else {
+    Write-Host "  newrelic_user_group_oid = `"<pending on-prem AD group + Entra sync>`""
+}
