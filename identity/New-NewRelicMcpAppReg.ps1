@@ -95,7 +95,11 @@ if (-not $connectAdmGraph) {
 }
 
 # --- Stage 1: ELEVATE -------------------------------------------------------
-& $connectAdmGraph -TenantId $TenantId -Scopes $scopes -SkipPrompt:$SkipPrompt | Out-Null
+# Assign the helper's return to a var (do NOT pipe to Out-Null): piping runs the
+# call in a pipeline, which makes stdout look redirected to MSAL and suppresses
+# the interactive device-code prompt (it then just spins to a 120s timeout).
+# First run may be slow (cold Graph module load + Zscaler TLS) — wait for the code.
+$admCtx = & $connectAdmGraph -TenantId $TenantId -Scopes $scopes -SkipPrompt:$SkipPrompt
 
 $appId = ''
 $groupOid = ''
