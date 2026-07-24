@@ -19,11 +19,20 @@ The pipeline runs off `master`. (Merged during prep.)
 
 ## 1. Identity — app registration (Graph) + access group (on-prem AD)
 
-### 1a. On-prem AD group (separate provisioning; has lead time)
+### 1a. On-prem AD group (service desk / AD admin; ~30 min sync)
 `AZ_JobRole_Observability_NewRelicMcp_User` is an **on-prem AD** group (all
-`AZ_JobRole_*` groups are `onPremisesSyncEnabled`), so it is created in on-prem AD
-(`ahs.int`) via your AD/identity process — **not** via Graph/this script — and syncs
-to Entra (~30 min). Add the intended developers to it in AD (managed independently).
+`AZ_JobRole_*` groups are `onPremisesSyncEnabled`) — created in AD (`ahs.int`), then
+synced to Entra (~30 min). Run **`identity/New-NewRelicMcpAdGroup.ps1`** on a **Windows
+host with the `ActiveDirectory` module (RSAT)** + DC line-of-sight (the service desk's
+environment — not the Mac; there's no AD module for macOS). It auto-discovers the OU +
+scope from the existing `AZ_JobRole_*` groups and lands the new one in the same place:
+```powershell
+.\identity\New-NewRelicMcpAdGroup.ps1 -WhatIf         # preview OU + plan
+.\identity\New-NewRelicMcpAdGroup.ps1                 # create it
+.\identity\New-NewRelicMcpAdGroup.ps1 -Members jdoe,asmith   # create + add members
+```
+Membership is managed here in AD, ongoing, by the service desk (`Add-ADGroupMember` or
+ADUC) — deliberately, not tied to any other New Relic group.
 
 ### 1b. App registration + group assignment (Graph, via the script)
 Uses AMN's sanctioned ADM pattern (Microsoft Graph SDK via `Connect-AdmGraph.ps1`,
