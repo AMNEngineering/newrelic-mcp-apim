@@ -1,194 +1,174 @@
+#Requires -Version 7.0
+
 <#
 .SYNOPSIS
-Idempotently create (or find) the dedicated Entra app registration for the New
-Relic MCP APIM gateway, plus the AD security group that gates access, and wire
-them together. Outputs the Application (client) ID and the group Object ID.
+Create (or find) the dedicated Entra app registration for the New Relic MCP APIM
+gateway + the AD security group that gates access, using AMN's canonical ADM
+elevation pattern. Outputs the Application (client) ID and the group Object ID.
 
 .DESCRIPTION
-The Terraform contract in this repo does NOT create identity — it only references
-the app id and group OID (the JWT audience + the required groups claim the APIM
-policy validates). So these are PREREQUISITES that must exist before the pipeline.
+These are PREREQUISITES the Terraform contract references (JWT audience + the
+required groups claim); it does not create them.
 
-ADM ELEVATION: registering an app + creating a group needs elevated Entra roles
-(Application Administrator/Developer + Groups Administrator). This script briefly
-signs in your `<you>.adm` admin account into an ISOLATED az config dir (a temp
-AZURE_CONFIG_DIR), runs the privileged Graph commands there, then discards that
-session. Your daily `az` login (`~/.azure`) — subscription and all — is never
-touched, so there is nothing to "move back".
+ADM ELEVATION (mandated pattern — plugins/amn-ops-identity/skills/adm-elevation):
+scripts that perform ADM-required Graph writes MUST use the Microsoft Graph SDK
+via setup/scripts/Connect-AdmGraph.ps1 — NEVER `az login` (that changes auth
+globally and breaks Claude Code + other tools). Four stages:
+  1. Elevate  — Connect-AdmGraph.ps1 (device-code sign-in as .adm; this is where
+                you enter the Safeguard-checked-out password + complete OneLogin MFA)
+  2. Run      — the Mg* writes below
+  3. Deelevate— Disconnect-MgGraph in finally { }
+  4. Verify   — re-read via the daily az CLI (guarded), throw on failure
 
-Design (decided 2026-07-16/17):
-  * ONE dedicated New Relic MCP app registration = the JWT audience, for ALL NR
-    MCP actions (read AND write). Access is gated by membership in ONE dedicated
-    AD security group (groups-claim check) — not an app role.
-  * groupMembershipClaims = ApplicationGroup, group assigned to the app, so only
-    that group emits in the token (overage-proof).
-  * Group membership is managed INDEPENDENTLY (add members deliberately) — NOT
-    tied to any other New Relic membership.
+Design: ONE dedicated app (JWT audience) for all NR MCP actions; access gated by
+membership in ONE dedicated security group (groups claim), groupMembershipClaims=
+ApplicationGroup with the group assigned to the app (overage-proof). Group
+membership is managed independently — add members deliberately.
 
-Safe to re-run: existing objects are reused and reconciled.
+Gate: dry-run by default (prints the plan, no elevation). Pass -Execute to apply.
 
-.PARAMETER DisplayName
-App registration display name. Default 'AMN New Relic MCP'.
+.PARAMETER Execute
+Perform the elevation + writes. Without it, prints the plan and exits.
 
-.PARAMETER GroupName
-Access security group display name. Default 'AZ_JobRole_Observability_NewRelicMcp_User'.
+.PARAMETER ConnectAdmGraphPath
+Path to setup/scripts/Connect-AdmGraph.ps1 (in the amn-ops-ai-plugin-marketplace
+repo). Auto-resolved from -ConnectAdmGraphPath, then $env:AMN_MARKETPLACE_ROOT,
+then a sibling marketplace checkout.
 
-.PARAMETER AdminUpn
-Admin account to elevate as. Default: derived from your daily az login by inserting
-`.adm` (casey.allard@... -> casey.allard.adm@...).
-
-.PARAMETER TenantId
-AMN tenant. Default 6232c2ec-fa42-4f27-92cd-787913fba489.
-
-.PARAMETER UseDeviceCode
-Use device-code login instead of the browser (for headless/SSH sessions).
-
-.PARAMETER CreateServicePrincipal
-Ensure an enterprise app (service principal) exists. Default: $true.
+.PARAMETER SkipPrompt
+Forwarded to Connect-AdmGraph (skip its one Y/N elevation confirmation).
 
 .EXAMPLE
-pwsh ./New-NewRelicMcpAppReg.ps1
-Elevates to <you>.adm in a browser, creates the app + group, prints the ids.
+pwsh ./identity/New-NewRelicMcpAppReg.ps1            # dry-run (plan only)
+pwsh ./identity/New-NewRelicMcpAppReg.ps1 -Execute   # elevate + create
 #>
-#Requires -Version 7.0
-[CmdletBinding(SupportsShouldProcess = $true)]
+[CmdletBinding()]
 param(
     [string]$DisplayName = 'AMN New Relic MCP',
     [string]$GroupName = 'AZ_JobRole_Observability_NewRelicMcp_User',
-    [string]$AdminUpn = '',
     [string]$TenantId = '6232c2ec-fa42-4f27-92cd-787913fba489',
-    [switch]$UseDeviceCode,
-    [bool]$CreateServicePrincipal = $true
+    [string]$ConnectAdmGraphPath,
+    [switch]$SkipPrompt,
+    [switch]$Execute
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-# Make failed `az` calls (non-zero exit) terminate instead of barreling on. PS 7.3+.
-$PSNativeCommandUseErrorActionPreference = $true
-$graph = 'https://graph.microsoft.com/v1.0'
 function Info($m) { Write-Host "  -> $m" -ForegroundColor Cyan }
 function Ok($m) { Write-Host "  OK $m" -ForegroundColor Green }
 
-$rolesHint = @'
-This needs Entra directory roles the elevated account must hold:
-  - Application Administrator (or Application Developer) — to register the app
-  - Groups Administrator — to create the security group
-Activate them via PIM for the .adm account, then re-run. Nothing was created.
-'@
-function Fail-Privileged($m) { Write-Host $rolesHint -ForegroundColor Yellow; throw $m }
+$scopes = @('Application.ReadWrite.All', 'AppRoleAssignment.ReadWrite.All', 'Group.ReadWrite.All', 'Directory.Read.All')
 
-# --- Derive the admin UPN from the DAILY az context (before elevating) -------
-$dailyUpn = az account show --query user.name -o tsv 2>$null
-if ([string]::IsNullOrWhiteSpace($dailyUpn)) {
-    throw "No daily az session found. Run 'az login' as your normal account first, then re-run."
-}
-if (-not $AdminUpn) {
-    if ($dailyUpn -notmatch '^(?<local>[^@]+)@(?<domain>.+)$') { throw "Could not parse daily UPN '$dailyUpn'." }
-    $AdminUpn = '{0}.adm@{1}' -f $Matches.local.ToLower(), $Matches.domain
+# --- Plan (always shown) ----------------------------------------------------
+Write-Host ""
+Write-Host "=== New Relic MCP identity plan ===" -ForegroundColor Cyan
+Write-Host "  App registration : $DisplayName  (single-tenant; identifier URI api://<appId>)"
+Write-Host "  groups claim     : ApplicationGroup (only the access group emits — overage-proof)"
+Write-Host "  Access group     : $GroupName  (security group; membership gates access)"
+Write-Host "  Group -> app      : appRoleAssignment (default access) so the group emits in the token"
+Write-Host "  Tenant           : $TenantId"
+Write-Host "  Elevation        : Connect-AdmGraph.ps1 (device-code sign-in as .adm) — Graph SDK, not az login"
+Write-Host "  Graph scopes     : $($scopes -join ', ')"
+Write-Host ""
+
+if (-not $Execute) {
+    Write-Host "DRY-RUN — nothing created. Re-run with -Execute to elevate (device code as your" -ForegroundColor Yellow
+    Write-Host ".adm account) and create the above. Needs the Microsoft.Graph module installed." -ForegroundColor Yellow
+    return
 }
 
-# --- ELEVATE into an isolated az config dir ----------------------------------
-$admDir = Join-Path ([IO.Path]::GetTempPath()) ('az-adm-nrmcp-' + (New-Guid).Guid)
-$prevConfigDir = [Environment]::GetEnvironmentVariable('AZURE_CONFIG_DIR')
+# --- Ensure the Microsoft Graph SDK modules are available -------------------
+$needed = @('Microsoft.Graph.Authentication', 'Microsoft.Graph.Applications', 'Microsoft.Graph.Groups')
+$missing = @($needed | Where-Object { -not (Get-Module -ListAvailable -Name $_) })
+if ($missing.Count -gt 0) {
+    throw "Missing PowerShell module(s): $($missing -join ', '). Install with: Install-Module Microsoft.Graph -Scope CurrentUser -Force"
+}
+
+# --- Resolve the sanctioned Connect-AdmGraph helper -------------------------
+$candidates = @()
+if ($ConnectAdmGraphPath) { $candidates += $ConnectAdmGraphPath }
+if ($env:AMN_MARKETPLACE_ROOT) { $candidates += (Join-Path $env:AMN_MARKETPLACE_ROOT 'setup' 'scripts' 'Connect-AdmGraph.ps1') }
+$candidates += (Join-Path $PSScriptRoot '..' '..' 'amn-ops-ai-plugin-marketplace' 'setup' 'scripts' 'Connect-AdmGraph.ps1')
+$connectAdmGraph = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $connectAdmGraph) {
+    throw "Could not find Connect-AdmGraph.ps1 (it lives in amn-ops-ai-plugin-marketplace/setup/scripts/). Pass -ConnectAdmGraphPath <file> or set `$env:AMN_MARKETPLACE_ROOT to your marketplace checkout. Checked: $($candidates -join '; ')"
+}
+
+# --- Stage 1: ELEVATE -------------------------------------------------------
+& $connectAdmGraph -TenantId $TenantId -Scopes $scopes -SkipPrompt:$SkipPrompt | Out-Null
+
 $appId = ''
 $groupOid = ''
-
 try {
-    $env:AZURE_CONFIG_DIR = $admDir
-    Write-Host ""
-    Write-Host "Elevating to $AdminUpn — isolated session; your daily az CLI (subscription and all) is untouched." -ForegroundColor Yellow
-    if ($UseDeviceCode) {
-        Write-Host "Follow the device-code prompt and sign in as $AdminUpn." -ForegroundColor Yellow
-        az login --tenant $TenantId --allow-no-subscriptions --use-device-code --only-show-errors | Out-Null
+    # --- Stage 2: RUN -------------------------------------------------------
+    # App registration
+    $existingApp = @(Get-MgApplication -Filter "displayName eq '$DisplayName'" -All)
+    if ($existingApp.Count -gt 0) {
+        $app = $existingApp[0]
+        Ok "Found existing app: $($app.AppId)"
     }
     else {
-        Write-Host "A browser will open — sign in as $AdminUpn." -ForegroundColor Yellow
-        az login --tenant $TenantId --allow-no-subscriptions --only-show-errors | Out-Null
-    }
-
-    $who = az account show --query user.name -o tsv 2>$null
-    if ([string]::IsNullOrWhiteSpace($who)) { throw "Elevated login did not complete." }
-    if ($who -notlike '*.adm@*') {
-        throw "Signed in as '$who', which is not an .adm admin account. Aborting (nothing created) — re-run and pick $AdminUpn."
-    }
-    Ok "Elevated as $who."
-
-    # --- Find or create the app ---------------------------------------------
-    Info "Looking for existing app '$DisplayName'..."
-    $appId = az ad app list --display-name $DisplayName --query "[0].appId" -o tsv 2>$null
-    if ($appId) {
-        Ok "Found existing app: $appId"
-    }
-    else {
-        if (-not $PSCmdlet.ShouldProcess($DisplayName, "Create Entra app registration")) { return }
         Info "Creating app '$DisplayName'..."
-        try { $appId = az ad app create --display-name $DisplayName --sign-in-audience AzureADMyOrg --query appId -o tsv }
-        catch { Fail-Privileged "Could not register the app '$DisplayName'. $_" }
-        if ([string]::IsNullOrWhiteSpace($appId)) { Fail-Privileged "App registration returned no appId (insufficient privileges)." }
-        Ok "Created app: $appId"
+        $app = New-MgApplication -DisplayName $DisplayName -SignInAudience 'AzureADMyOrg'
+        Ok "Created app: $($app.AppId)"
+    }
+    $appId = $app.AppId
+
+    # Identifier URI + ApplicationGroup claims
+    Info "Setting identifier URI api://$appId + groupMembershipClaims=ApplicationGroup..."
+    Update-MgApplication -ApplicationId $app.Id -IdentifierUris @("api://$appId") -GroupMembershipClaims 'ApplicationGroup'
+    Ok "App configured."
+
+    # Service principal (enterprise app) — needed to assign the group
+    $existingSp = @(Get-MgServicePrincipal -Filter "appId eq '$appId'" -All)
+    if ($existingSp.Count -gt 0) { $spId = $existingSp[0].Id; Ok "Service principal exists: $spId" }
+    else { $spId = (New-MgServicePrincipal -AppId $appId).Id; Ok "Service principal created: $spId" }
+
+    # Access group (security group)
+    $existingGrp = @(Get-MgGroup -Filter "displayName eq '$GroupName'" -All)
+    if ($existingGrp.Count -gt 0) {
+        $groupOid = $existingGrp[0].Id
+        Ok "Found existing group: $groupOid"
+    }
+    else {
+        $nick = ($GroupName -replace '[^a-zA-Z0-9]', '')
+        Info "Creating SECURITY group '$GroupName'..."
+        $groupOid = (New-MgGroup -DisplayName $GroupName -MailEnabled:$false -MailNickname $nick -SecurityEnabled -GroupTypes @()).Id
+        Ok "Created group: $groupOid"
     }
 
-    # --- Identifier URI api://<appId> ---------------------------------------
-    Info "Ensuring identifier URI api://$appId ..."
-    az ad app update --id $appId --identifier-uris "api://$appId" | Out-Null
-    Ok "Identifier URI set."
-
-    # --- Emit ONLY app-assigned groups in the groups claim (overage-proof) --
-    Info "Setting groupMembershipClaims = ApplicationGroup ..."
-    az ad app update --id $appId --set groupMembershipClaims=ApplicationGroup | Out-Null
-    Ok "groups claim mode = ApplicationGroup."
-
-    # --- Service principal (required for group assignment) ------------------
-    if ($CreateServicePrincipal) {
-        $spId = az ad sp show --id $appId --query id -o tsv 2>$null
-        if (-not $spId) {
-            Info "Creating service principal (enterprise app)..."
-            $spId = az ad sp create --id $appId --query id -o tsv
-            Ok "Service principal created: $spId"
-        }
-        else { Ok "Service principal exists: $spId" }
+    # Assign the group to the app (ApplicationGroup emits only app-assigned groups).
+    # Default-access app role = all-zero GUID.
+    $assigned = @(Get-MgGroupAppRoleAssignment -GroupId $groupOid | Where-Object { $_.ResourceId -eq $spId })
+    if ($assigned.Count -gt 0) {
+        Ok "Group already assigned to the app."
     }
-
-    # --- Access group: create/find + assign to the app ----------------------
-    if ($GroupName) {
-        Info "Looking for security group '$GroupName'..."
-        $groupOid = az ad group list --display-name $GroupName --query "[0].id" -o tsv 2>$null
-        if ($groupOid) {
-            Ok "Found existing group: $groupOid"
-        }
-        elseif ($PSCmdlet.ShouldProcess($GroupName, "Create security group")) {
-            $nick = ($GroupName -replace '[^a-zA-Z0-9]', '')
-            Info "Creating SECURITY group '$GroupName'..."
-            try { $groupOid = az ad group create --display-name $GroupName --mail-nickname $nick --query id -o tsv }
-            catch { Fail-Privileged "Could not create the security group '$GroupName' (need Groups Administrator). $_" }
-            if ([string]::IsNullOrWhiteSpace($groupOid)) { Fail-Privileged "Group creation returned no OID (insufficient privileges)." }
-            Ok "Created group: $groupOid"
-        }
-
-        if ($groupOid -and $CreateServicePrincipal -and $PSCmdlet.ShouldProcess($GroupName, "Assign group to the app (ApplicationGroup)")) {
-            $existing = az rest --method GET --url "$graph/groups/$groupOid/appRoleAssignments" --query "value[?resourceId=='$spId'] | [0].id" -o tsv 2>$null
-            if ($existing) {
-                Ok "Group already assigned to the app."
-            }
-            else {
-                Info "Assigning group to the app..."
-                $tmp = New-TemporaryFile
-                @{ principalId = $groupOid; resourceId = $spId; appRoleId = '00000000-0000-0000-0000-000000000000' } | ConvertTo-Json | Set-Content $tmp -Encoding utf8
-                az rest --method POST --url "$graph/groups/$groupOid/appRoleAssignments" --headers "Content-Type=application/json" --body "@$tmp" | Out-Null
-                Remove-Item $tmp -Force
-                Ok "Group assigned — its OID will now appear in the groups claim."
-            }
-        }
+    else {
+        Info "Assigning group to the app..."
+        New-MgGroupAppRoleAssignment -GroupId $groupOid -PrincipalId $groupOid -ResourceId $spId -AppRoleId '00000000-0000-0000-0000-000000000000' | Out-Null
+        Ok "Group assigned — its OID will now appear in the groups claim."
     }
 }
 finally {
-    # --- DE-ELEVATE: discard the isolated admin session; restore daily context.
-    Info "De-elevating (discarding the isolated admin session)..."
-    az logout --only-show-errors 2>$null | Out-Null
-    if ($null -ne $prevConfigDir) { $env:AZURE_CONFIG_DIR = $prevConfigDir }
-    else { Remove-Item Env:\AZURE_CONFIG_DIR -ErrorAction SilentlyContinue }
-    Remove-Item $admDir -Recurse -Force -ErrorAction SilentlyContinue
-    Ok "De-elevated. Your daily az CLI session is unchanged."
+    # --- Stage 3: DEELEVATE -------------------------------------------------
+    Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+    Ok "Deelevated (Graph session disconnected)."
+}
+
+# --- Stage 4: VERIFY-AS-DAILY-DRIVER ----------------------------------------
+Write-Host ""
+Write-Host "--- Verify (daily-driver read) ---" -ForegroundColor Cyan
+$azUser = az account show --query "user.name" -o tsv --only-show-errors 2>$null
+if (-not $azUser) { throw "Stage 4 needs a daily-driver az session. Run 'az login' as your daily account, then re-verify." }
+if ($azUser -like '*.adm*') { throw "Stage 4 requires a daily-driver context but az CLI is '$azUser' (.adm). Run 'az logout' + 'az login' as daily." }
+
+$appSeen = az ad app show --id $appId --query appId -o tsv --only-show-errors 2>$null
+if ($appSeen -ne $appId) { throw "Stage 4 FAILED: app $appId not visible to daily-driver ($azUser)." }
+Ok "App $appId visible to daily-driver."
+if ($groupOid) {
+    $grpSeen = az ad group show --group $groupOid --query id -o tsv --only-show-errors 2>$null
+    if ($grpSeen -ne $groupOid) { throw "Stage 4 FAILED: group $groupOid not visible to daily-driver." }
+    Ok "Group $groupOid visible to daily-driver."
 }
 
 Write-Host ""
@@ -196,16 +176,12 @@ Write-Host "=============================================================" -Fore
 Write-Host " New Relic MCP identity ready" -ForegroundColor Green
 Write-Host "   Application (client) ID : $appId" -ForegroundColor Green
 Write-Host "   Audience                : api://$appId" -ForegroundColor Green
-if ($groupOid) { Write-Host "   Access group OID         : $groupOid" -ForegroundColor Green }
+Write-Host "   Access group OID         : $groupOid" -ForegroundColor Green
 Write-Host "=============================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Next — set in infrastructure/environments/*.tfvars:"
 Write-Host "  newrelic_mcp_app_id     = `"$appId`""
-if ($groupOid) {
-    Write-Host "  newrelic_user_group_oid = `"$groupOid`""
-    Write-Host ""
-    Write-Host "Then add members deliberately (this group is managed independently — do NOT"
-    Write-Host "tie it to other New Relic memberships):"
-    Write-Host "  Entra -> Groups -> $GroupName -> Members -> Add, or"
-    Write-Host "  az ad group member add --group $groupOid --member-id <userObjectId>"
-}
+Write-Host "  newrelic_user_group_oid = `"$groupOid`""
+Write-Host ""
+Write-Host "Then add members deliberately (managed independently — do NOT tie to other NR memberships):"
+Write-Host "  Entra -> Groups -> $GroupName -> Members -> Add"
