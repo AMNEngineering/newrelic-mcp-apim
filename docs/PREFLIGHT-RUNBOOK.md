@@ -18,12 +18,18 @@ Constants:
 The pipeline runs off `master`. (Merged during prep.)
 
 ## 1. Identity — create the app registration + access group
-Needs Entra app-admin.
+The script **self-elevates**: it signs your `<you>.adm` account into an isolated
+`AZURE_CONFIG_DIR`, runs the privileged Graph commands, then discards that session
+— your daily `az` login (subscription and all) is never touched. Your `.adm`
+account must hold **Application Administrator/Developer** + **Groups Administrator**
+(activate via PIM first if eligible).
 ```bash
 pwsh ./identity/New-NewRelicMcpAppReg.ps1
+# A browser opens — sign in as <you>.adm@amnhealthcare.com.
 # Creates app "AMN New Relic MCP" (api://<appId>) + group
 # AZ_JobRole_Observability_NewRelicMcp_User, ApplicationGroup claims, assigns the
-# group to the app. Prints APP ID and GROUP OID — copy both.
+# group to the app, then de-elevates. Prints APP ID and GROUP OID — copy both.
+# Headless/SSH: add -UseDeviceCode.
 ```
 Then add the intended developers to the group (Entra → Groups →
 `AZ_JobRole_Observability_NewRelicMcp_User` → Members), or:
