@@ -1,5 +1,13 @@
 # New Relic MCP behind APIM
 
+> **⚠️ DEPRECATED (2026-07-29).** Superseded by direct OAuth to `mcp.newrelic.com`,
+> federated through OneLogin. See [`DEPRECATION.md`](DEPRECATION.md) for the full
+> narrative and the (not-yet-run) hard-teardown checklist. Current NR MCP auth lives
+> in [`amn-ops-observability` v1.2.0+](https://github.com/AMNEngineering/amn-ops-ai-plugin-marketplace/blob/main/plugins/amn-ops-observability/MCP-APIM-MIGRATION.md).
+>
+> This repo is kept read-only for reference. The APIM route is still deployed but
+> receives no traffic; Terraform teardown is queued as a follow-up.
+
 APIM gateway that fronts New Relic's hosted MCP server so Claude Code developers
 authenticate with Entra ID and **never hold the New Relic key** — APIM injects it
 server-side. This moves the New Relic key off laptops into central Key Vault
