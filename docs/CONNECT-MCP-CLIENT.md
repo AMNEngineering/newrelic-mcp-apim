@@ -41,8 +41,22 @@ this app specifically.
 
 ### Claude Code (`.mcp.json`)
 
-The `amn-ops-observability` marketplace plugin ships this (URL + token come from
-`NEWRELIC_MCP_URL` / `NEWRELIC_MCP_TOKEN` set by the bootstrap). Standalone form:
+**Preferred:** run the client-side installer, which drops the config into
+`~/.claude/.mcp.json` using the `headersHelper` pattern (`az` mints tokens
+per request; no static value on disk, no env vars):
+
+```bash
+# macOS/Linux
+curl -fsSL https://raw.githubusercontent.com/AMNEngineering/newrelic-mcp-apim/master/client/install.sh | bash
+
+# Windows PowerShell
+iwr -useb https://raw.githubusercontent.com/AMNEngineering/newrelic-mcp-apim/master/client/install.ps1 | iex
+```
+
+See [`../client/README.md`](../client/README.md) for `-Check` mode, env
+selection (`--env=dev|int`), and troubleshooting.
+
+**Manual form:**
 
 ```jsonc
 {
@@ -50,7 +64,15 @@ The `amn-ops-observability` marketplace plugin ships this (URL + token come from
     "newrelic": {
       "type": "http",
       "url": "https://api.dev.amnhealthcare.io/ai/new-relic-mcp/dev",
-      "headers": { "Authorization": "Bearer ${NEWRELIC_MCP_TOKEN}" }
+      "headersHelper": {
+        "command": "az",
+        "args": [
+          "account", "get-access-token",
+          "--resource", "api://709bbe94-f759-422f-b7fa-28f1fde28ae1",
+          "--query", "{Authorization: join(' ',['Bearer',accessToken])}",
+          "-o", "json"
+        ]
+      }
     }
   }
 }
