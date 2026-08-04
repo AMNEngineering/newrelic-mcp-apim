@@ -6,7 +6,7 @@ Adds the New Relic MCP (routed through this APIM gateway) to Claude Code.
 
 ## What it does
 
-Merges a `newrelic` entry into the supported Claude Code user configuration file, `~/.claude.json`, without changing unrelated top-level settings or other MCP servers. Authentication uses a `headersHelper` that calls `az account get-access-token` on every request — so tokens refresh automatically, no static value stored on disk, no NR key on your laptop (APIM injects it server-side from Key Vault).
+Merges a `newrelic` entry into the supported Claude Code user configuration file, `~/.claude.json`, without changing unrelated top-level settings or other MCP servers. Authentication uses a `headersHelper` command that calls `az account get-access-token` when Claude Code connects or reconnects. Claude Code also re-runs it and retries once after a `401` or `403`, so no static value is stored on disk and no NR key is kept on your laptop (APIM injects it server-side from Key Vault).
 
 The `~/.claude.json` entry looks like:
 
@@ -16,15 +16,7 @@ The `~/.claude.json` entry looks like:
     "newrelic": {
       "type": "http",
       "url": "https://api.dev.amnhealthcare.io/ai/new-relic-mcp/dev",
-      "headersHelper": {
-        "command": "az",
-        "args": [
-          "account", "get-access-token",
-          "--resource", "api://709bbe94-f759-422f-b7fa-28f1fde28ae1",
-          "--query", "{Authorization: join(' ',['Bearer',accessToken])}",
-          "-o", "json"
-        ]
-      }
+      "headersHelper": "az account get-access-token --resource \"api://709bbe94-f759-422f-b7fa-28f1fde28ae1\" --query \"{Authorization: join(' ', ['Bearer', accessToken])}\" -o json"
     }
   }
 }
@@ -61,9 +53,9 @@ Both installers accept `-Check` / `--check` to validate + report without modifyi
 ## Verify
 
 1. Restart Claude Code (fully quit + relaunch — MCP config is read at startup).
-2. Run `/mcp` — `newrelic` should show **✔ Connected**. There is **no OAuth prompt** on this path; the `headersHelper` mints an Entra bearer from your `az` session on every request.
+2. Run `/mcp` — `newrelic` should show **✔ Connected**. There is **no OAuth prompt** on this path; the `headersHelper` mints an Entra bearer from your `az` session when Claude Code connects.
 3. Ask for a read, e.g. "list the New Relic accounts I can access."
-4. Restart Claude Code again — since the `headersHelper` refreshes tokens per request, sessions never age out mid-use.
+4. If a request gets a `401` or `403`, Claude Code re-runs the helper, reconnects with fresh headers, and retries the request once.
 
 ## Uninstall
 
@@ -85,4 +77,4 @@ See the top-level [`docs/CONNECT-MCP-CLIENT.md`](../docs/CONNECT-MCP-CLIENT.md) 
 
 - **No NR key on your laptop.** APIM injects the NerdGraph key from Key Vault at the gateway.
 - **Per-user Entra identity.** Every request carries your `az`-minted bearer; APIM validates the JWT + AD-group membership. Audit trail attributes to you individually.
-- **Auto-refreshing tokens.** `headersHelper` re-runs `az` on each request, so tokens never expire mid-session.
+- **Refreshable tokens.** `headersHelper` re-runs `az` on connection/reconnect and after a `401` or `403`; Claude Code retries the failed request once with the fresh header.
