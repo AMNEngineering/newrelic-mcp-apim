@@ -6,9 +6,9 @@ Adds the New Relic MCP (routed through this APIM gateway) to Claude Code.
 
 ## What it does
 
-Merges an `newrelic` entry into `~/.claude/.mcp.json` (non-destructively) pointing at this APIM gateway. Authentication uses a `headersHelper` that calls `az account get-access-token` on every request — so tokens refresh automatically, no static value stored on disk, no NR key on your laptop (APIM injects it server-side from Key Vault).
+Merges a `newrelic` entry into the supported Claude Code user configuration file, `~/.claude.json`, without changing unrelated top-level settings or other MCP servers. Authentication uses a `headersHelper` that calls `az account get-access-token` on every request — so tokens refresh automatically, no static value stored on disk, no NR key on your laptop (APIM injects it server-side from Key Vault).
 
-The `.mcp.json` entry looks like:
+The `~/.claude.json` entry looks like:
 
 ```jsonc
 {
@@ -67,7 +67,7 @@ Both installers accept `-Check` / `--check` to validate + report without modifyi
 
 ## Uninstall
 
-Remove the `newrelic` block from `~/.claude/.mcp.json` (or delete the file if that was its only entry).
+Remove only the `mcpServers.newrelic` block from `~/.claude.json`. If `mcpServers` is then empty, that top-level key can also be removed; preserve the file and all unrelated Claude Code settings.
 
 ## Troubleshooting
 

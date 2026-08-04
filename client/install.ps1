@@ -3,7 +3,7 @@
 Adds the APIM-fronted New Relic MCP to Claude Code (headersHelper pattern).
 
 .DESCRIPTION
-Merges a `newrelic` MCP server entry into $HOME/.claude/.mcp.json using the
+Merges a `newrelic` MCP server entry into $HOME/.claude.json using the
 headersHelper pattern: `az account get-access-token` mints an Entra bearer on
 every request, APIM validates the JWT + AD-group membership and injects the
 KV-stored NerdGraph key server-side. No NR key on your laptop; no static
@@ -74,17 +74,7 @@ $McpUrl = "https://api.$Env.amnhealthcare.io/ai/new-relic-mcp/$Env"
 Write-Head "New Relic MCP — APIM install (env=$Env)"
 
 # ------ locate config file ------
-$claudeDir = Join-Path $HOME '.claude'
-$cfgFile   = Join-Path $claudeDir '.mcp.json'
-
-if (-not (Test-Path $claudeDir)) {
-    if ($Check) {
-        Write-Warn2 "$claudeDir does not exist. Claude Code may not be installed for this user."
-        exit 0
-    }
-    Write-Info "Creating $claudeDir"
-    New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
-}
+$cfgFile = Join-Path $HOME '.claude.json'
 
 # ------ prereq check: Claude Code CLI ------
 if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {

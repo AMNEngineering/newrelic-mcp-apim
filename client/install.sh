@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # client/install.sh — add the APIM-fronted New Relic MCP to Claude Code.
 #
-# Merges an `newrelic` server entry into ~/.claude/.mcp.json using the
+# Merges a `newrelic` server entry into ~/.claude.json using the
 # headersHelper pattern — az mints an Entra bearer per request, APIM validates
 # it + injects the KV-stored NerdGraph key server-side. No NR key on disk.
 #
@@ -58,17 +58,7 @@ MCP_URL="https://api.${ENV_NAME}.amnhealthcare.io/ai/new-relic-mcp/${ENV_NAME}"
 head "New Relic MCP — APIM install (env=$ENV_NAME)"
 
 # ------ locate config file ------
-CLAUDE_DIR="${HOME}/.claude"
-CFG_FILE="${CLAUDE_DIR}/.mcp.json"
-
-if [[ ! -d "$CLAUDE_DIR" ]]; then
-  if [[ $CHECK_ONLY -eq 1 ]]; then
-    warn "~/.claude does not exist. Claude Code may not be installed for this user."
-    exit 0
-  fi
-  info "Creating $CLAUDE_DIR"
-  mkdir -p "$CLAUDE_DIR"
-fi
+CFG_FILE="${HOME}/.claude.json"
 
 # ------ prereq check: Claude Code CLI ------
 if ! command -v claude >/dev/null 2>&1; then

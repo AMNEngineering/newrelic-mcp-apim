@@ -23,8 +23,8 @@ differ only in client-side auth.
   traffic again. The soft-deprecation's queued `terraform destroy` is **cancelled**.
 - Key Vault secret `AMNHealthcare-NR-Terraform-UserKey` — kept (unchanged).
 - Entra app registration `api://709bbe94-…` + assigned AD groups — kept (unchanged).
-- Client-side installer under [`client/`](client/) — new; adds the `.mcp.json`
-  headersHelper entry to `~/.claude/.mcp.json`.
+- Client-side installer under [`client/`](client/) — new; adds the `mcpServers`
+  headersHelper entry to the user-scope `~/.claude.json`.
 
 ## Previous soft-deprecation (2026-07-29 → 2026-07-30)
 

@@ -39,11 +39,12 @@ this app specifically.
 
 ## Client configuration
 
-### Claude Code (`.mcp.json`)
+### Claude Code (`~/.claude.json`)
 
-**Preferred:** run the client-side installer, which drops the config into
-`~/.claude/.mcp.json` using the `headersHelper` pattern (`az` mints tokens
-per request; no static value on disk, no env vars):
+**Preferred:** run the client-side installer, which merges the server into the
+supported user-scope file `~/.claude.json` using the `headersHelper` pattern
+(`az` mints tokens per request; no static value on disk, no env vars). Existing
+top-level settings and unrelated MCP servers are preserved:
 
 ```bash
 # macOS/Linux
@@ -54,7 +55,7 @@ iwr -useb https://raw.githubusercontent.com/AMNEngineering/newrelic-mcp-apim/mas
 ```
 
 See [`../client/README.md`](../client/README.md) for `-Check` mode, env
-selection (`--env=dev|int`), and troubleshooting.
+selection (`--env=dev|int`), uninstall instructions, and troubleshooting.
 
 **Manual form:**
 
