@@ -2,8 +2,9 @@
 # client/install.sh — add the APIM-fronted New Relic MCP to Claude Code.
 #
 # Merges a `newrelic` server entry into ~/.claude.json using the
-# headersHelper pattern — az mints an Entra bearer per request, APIM validates
-# it + injects the KV-stored NerdGraph key server-side. No NR key on disk.
+# headersHelper pattern — az mints an Entra bearer on connection/reconnect and
+# after a 401/403, APIM validates it + injects the KV-stored NerdGraph key
+# server-side. No NR key on disk.
 #
 # For AMN engineers on the APIM Claude Code path. SSO / Anthropic-direct users
 # should install from AMNEngineering/newrelic-mcp-sso instead.
@@ -54,6 +55,7 @@ case "$ENV_NAME" in
 esac
 
 MCP_URL="https://api.${ENV_NAME}.amnhealthcare.io/ai/new-relic-mcp/${ENV_NAME}"
+HEADERS_HELPER_COMMAND="az account get-access-token --resource \"$NR_MCP_APP_ID\" --query \"{Authorization: join(' ', ['Bearer', accessToken])}\" -o json"
 
 head "New Relic MCP — APIM install (env=$ENV_NAME)"
 
@@ -128,22 +130,10 @@ if [[ -f "$CFG_FILE" ]]; then
 fi
 
 # ------ the APIM/headersHelper entry ------
-NEWRELIC_ENTRY=$(cat <<JSON
-{
-  "type": "http",
-  "url": "$MCP_URL",
-  "headersHelper": {
-    "command": "az",
-    "args": [
-      "account", "get-access-token",
-      "--resource", "$NR_MCP_APP_ID",
-      "--query", "{Authorization: join(' ',['Bearer',accessToken])}",
-      "-o", "json"
-    ]
-  }
-}
-JSON
-)
+NEWRELIC_ENTRY=$(jq -n \
+  --arg url "$MCP_URL" \
+  --arg headersHelper "$HEADERS_HELPER_COMMAND" \
+  '{type: "http", url: $url, headersHelper: $headersHelper}')
 
 if [[ $CHECK_ONLY -eq 1 ]]; then
   ok "Check-only mode. Would merge this into $CFG_FILE:"
@@ -181,7 +171,7 @@ fi
 
 head "Next steps"
 info "1. Fully quit Claude Code and relaunch."
-info "2. Run /mcp — 'newrelic' should show ✔ Connected (no OAuth prompt — the headersHelper mints tokens per request from your az session)."
+info "2. Run /mcp — 'newrelic' should show ✔ Connected (no OAuth prompt — headersHelper mints a token from your az session when Claude Code connects)."
 info "3. If it shows 'Failed to connect', check: az account show (session active?) and group membership (AZ_JobRole_Observability_NewRelicMcp_User)."
 echo ""
 info "Endpoint: $MCP_URL"

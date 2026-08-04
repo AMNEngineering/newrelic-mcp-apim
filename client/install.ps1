@@ -5,9 +5,9 @@ Adds the APIM-fronted New Relic MCP to Claude Code (headersHelper pattern).
 .DESCRIPTION
 Merges a `newrelic` MCP server entry into $HOME/.claude.json using the
 headersHelper pattern: `az account get-access-token` mints an Entra bearer on
-every request, APIM validates the JWT + AD-group membership and injects the
-KV-stored NerdGraph key server-side. No NR key on your laptop; no static
-Authorization header; tokens refresh automatically.
+connection/reconnect and after a 401/403, APIM validates the JWT + AD-group
+membership and injects the KV-stored NerdGraph key server-side. No NR key on
+your laptop; no static Authorization header on disk.
 
 For AMN engineers on the APIM Claude Code path (the default at AMN). If you're
 on the Anthropic-direct Claude Code subscription cohort, install from
@@ -70,6 +70,7 @@ function ConvertTo-HashtableRecursive {
 
 $NrMcpAppId = 'api://709bbe94-f759-422f-b7fa-28f1fde28ae1'
 $McpUrl = "https://api.$Env.amnhealthcare.io/ai/new-relic-mcp/$Env"
+$HeadersHelperCommand = "az account get-access-token --resource `"$NrMcpAppId`" --query `"{Authorization: join(' ', ['Bearer', accessToken])}`" -o json"
 
 Write-Head "New Relic MCP — APIM install (env=$Env)"
 
@@ -141,15 +142,7 @@ if ($hadFile) {
 $newRelicEntry = [ordered]@{
     type          = 'http'
     url           = $McpUrl
-    headersHelper = [ordered]@{
-        command = 'az'
-        args    = @(
-            'account', 'get-access-token',
-            '--resource', $NrMcpAppId,
-            '--query', "{Authorization: join(' ',['Bearer',accessToken])}",
-            '-o', 'json'
-        )
-    }
+    headersHelper = $HeadersHelperCommand
 }
 
 if ($Check) {
@@ -191,7 +184,7 @@ try {
 
 Write-Head "Next steps"
 Write-Info "1. Fully quit Claude Code and relaunch."
-Write-Info "2. Run /mcp — 'newrelic' should show ✔ Connected (no OAuth prompt — headersHelper mints tokens per request from your az session)."
+Write-Info "2. Run /mcp — 'newrelic' should show ✔ Connected (no OAuth prompt — headersHelper mints a token from your az session when Claude Code connects)."
 Write-Info "3. If it shows 'Failed to connect', check: az account show (session active?) and group membership (AZ_JobRole_Observability_NewRelicMcp_User)."
 Write-Host ""
 Write-Info "Endpoint: $McpUrl"

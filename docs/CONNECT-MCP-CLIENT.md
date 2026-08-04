@@ -31,11 +31,12 @@ Interactively (developer laptop, Azure CLI logged in):
 az account get-access-token --resource "api://<newrelic-mcp-app-id>" --query accessToken -o tsv
 ```
 
-The token is short-lived and **baked at client launch** — a mid-session `401`
-means it aged out, so restart the client to re-mint it (same pattern as the Claude
-Code model gateway). Note the audience is the **dedicated NR MCP app**
-(`api://<newrelic-mcp-app-id>`), not the model-gateway audience — mint a token for
-this app specifically.
+The token is short-lived. Claude Code's `headersHelper` mints one on connection
+or reconnect; after a `401` or `403`, Claude Code re-runs the helper, reconnects,
+and retries the request once. Clients that bake the token at launch must restart
+to re-mint it after expiry. The audience is the **dedicated NR MCP app**
+(`api://<newrelic-mcp-app-id>`), not the model-gateway audience — mint a token
+for this app specifically.
 
 ## Client configuration
 
@@ -43,8 +44,9 @@ this app specifically.
 
 **Preferred:** run the client-side installer, which merges the server into the
 supported user-scope file `~/.claude.json` using the `headersHelper` pattern
-(`az` mints tokens per request; no static value on disk, no env vars). Existing
-top-level settings and unrelated MCP servers are preserved:
+(`az` mints tokens on connection/reconnect and after a `401` or `403`; no static
+value on disk, no env vars). Existing top-level settings and unrelated MCP
+servers are preserved:
 
 ```bash
 # macOS/Linux
@@ -65,15 +67,7 @@ selection (`--env=dev|int`), uninstall instructions, and troubleshooting.
     "newrelic": {
       "type": "http",
       "url": "https://api.dev.amnhealthcare.io/ai/new-relic-mcp/dev",
-      "headersHelper": {
-        "command": "az",
-        "args": [
-          "account", "get-access-token",
-          "--resource", "api://709bbe94-f759-422f-b7fa-28f1fde28ae1",
-          "--query", "{Authorization: join(' ',['Bearer',accessToken])}",
-          "-o", "json"
-        ]
-      }
+      "headersHelper": "az account get-access-token --resource \"api://709bbe94-f759-422f-b7fa-28f1fde28ae1\" --query \"{Authorization: join(' ', ['Bearer', accessToken])}\" -o json"
     }
   }
 }
