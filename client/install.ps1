@@ -54,16 +54,32 @@ function ConvertTo-HashtableRecursive {
     param([Parameter(ValueFromPipeline = $true)]$Object)
     process {
         if ($null -eq $Object) { return $null }
-        if ($Object -is [System.Collections.IEnumerable] -and -not ($Object -is [string])) {
-            return @($Object | ForEach-Object { ConvertTo-HashtableRecursive $_ })
+
+        if ($Object -is [System.Collections.IDictionary]) {
+            $h = [ordered]@{}
+            foreach ($key in $Object.Keys) {
+                $h[$key] = ConvertTo-HashtableRecursive $Object[$key]
+            }
+            return $h
         }
-        if ($Object.PSObject -and $Object.PSObject.Properties -and $Object.PSObject.Properties.Count -gt 0) {
+
+        if ($Object -is [pscustomobject]) {
             $h = [ordered]@{}
             foreach ($p in $Object.PSObject.Properties) {
                 $h[$p.Name] = ConvertTo-HashtableRecursive $p.Value
             }
             return $h
         }
+
+        if ($Object -is [System.Collections.IEnumerable] -and -not ($Object -is [string])) {
+            $items = @($Object)
+            $converted = [object[]]::new($items.Count)
+            for ($i = 0; $i -lt $items.Count; $i++) {
+                $converted[$i] = ConvertTo-HashtableRecursive $items[$i]
+            }
+            return ,$converted
+        }
+
         return $Object
     }
 }
@@ -124,7 +140,7 @@ if ($hadFile) {
         exit 1
     }
 
-    if ($existing.ContainsKey('mcpServers') -and $existing.mcpServers.ContainsKey('newrelic')) {
+    if ($existing.Contains('mcpServers') -and $existing.mcpServers.Contains('newrelic')) {
         Write-Warn2 "an 'newrelic' MCP entry already exists in $cfgFile."
         Write-Info "Current entry:"
         ($existing.mcpServers.newrelic | ConvertTo-Json -Depth 10) -split "`n" | ForEach-Object { Write-Info "    $_" }
@@ -161,7 +177,7 @@ if ($hadFile) {
 
 # ------ merge ------
 if (-not $existing) { $existing = [ordered]@{} }
-if (-not $existing.ContainsKey('mcpServers') -or -not $existing.mcpServers) {
+if (-not $existing.Contains('mcpServers') -or -not $existing.mcpServers) {
     $existing.mcpServers = [ordered]@{}
 }
 $existing.mcpServers.newrelic = $newRelicEntry
