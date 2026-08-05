@@ -26,17 +26,35 @@ CHECK_ONLY=0
 ENV_NAME="dev"
 NR_MCP_APP_ID="api://709bbe94-f759-422f-b7fa-28f1fde28ae1"
 
-for arg in "$@"; do
-  case "$arg" in
-    --check|-c) CHECK_ONLY=1 ;;
-    --env=*) ENV_NAME="${arg#--env=}" ;;
-    --env)   shift; ENV_NAME="${1:-dev}" ;;
+while (($#)); do
+  case "$1" in
+    --check|-c)
+      CHECK_ONLY=1
+      shift
+      ;;
+    --env)
+      if (($# < 2)) || [[ -z "$2" || "$2" == -* ]]; then
+        fail "--env requires a value (allowed: dev, int)"
+        exit 1
+      fi
+      ENV_NAME="$2"
+      shift 2
+      ;;
+    --env=*)
+      ENV_NAME="${1#--env=}"
+      if [[ -z "$ENV_NAME" ]]; then
+        fail "--env requires a value (allowed: dev, int)"
+        exit 1
+      fi
+      shift
+      ;;
     --help|-h)
       cat <<'HELP'
 client/install.sh — add APIM-fronted New Relic MCP to Claude Code.
 
 Usage:
   install.sh                      Install for dev (default).
+  install.sh --env int            Install for int environment.
   install.sh --env=int            Install for int environment.
   install.sh --check              Validate + report only, no modifications.
   install.sh --help               Show this help.
@@ -45,7 +63,14 @@ Environments:  dev, int
 HELP
       exit 0
       ;;
-    *) warn "unknown arg: $arg" ;;
+    -*)
+      fail "unknown option: $1"
+      exit 1
+      ;;
+    *)
+      fail "unexpected argument: $1"
+      exit 1
+      ;;
   esac
 done
 
