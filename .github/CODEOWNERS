@@ -1,0 +1,12 @@
+# Code owners for this repository.
+# Code-owner review is not required by the merge-gate ruleset while the
+# repository uses the upstream zero-required-review bootstrap policy.
+
+*                            @AMNEngineering/amn-cloud-operations
+
+/.github/                    @AMNEngineering/amn-cloud-operations
+/tests/                      @AMNEngineering/amn-cloud-operations
+/client/                     @AMNEngineering/amn-cloud-operations
+/identity/                   @AMNEngineering/amn-cloud-operations
+/test-harness/               @AMNEngineering/amn-cloud-operations
+/Run-Tests.ps1               @AMNEngineering/amn-cloud-operations
