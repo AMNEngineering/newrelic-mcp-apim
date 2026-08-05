@@ -96,3 +96,17 @@ can be dropped from developer setup entirely.
 **Connecting any MCP client** (Claude Code, VS Code, Copilot Studio, curl) — see
 [`docs/CONNECT-MCP-CLIENT.md`](docs/CONNECT-MCP-CLIENT.md) for endpoint URLs, token
 acquisition, the access-group requirement, and per-client config snippets.
+
+## Merge gate
+
+Pull requests follow the
+[AMN GitHub merge-gate standard](https://github.com/AMNEngineering/github-merge-bdd-ci/blob/main/STANDARD.md).
+Run the hosted-safe Pester gate locally with:
+
+```powershell
+pwsh -File ./Run-Tests.ps1
+```
+
+GitHub Actions also runs the same suite under Windows PowerShell 5.1. Live
+Azure and network checks are tagged `Integration` and excluded from the
+blocking `gate` job.
