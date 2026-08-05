@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 End-to-end smoke test for the New Relic MCP APIM gateway.
 

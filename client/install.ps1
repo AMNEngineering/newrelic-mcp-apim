@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 Adds the APIM-fronted New Relic MCP to Claude Code (headersHelper pattern).
 

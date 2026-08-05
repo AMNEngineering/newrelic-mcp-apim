@@ -1,0 +1,12 @@
+# Code owners for this repository.
+# Code-owner review is not required by the merge-gate ruleset while the
+# repository uses the upstream zero-required-review bootstrap policy.
+
+*                            @AMNEngineering/amn-devops
+
+/.github/                    @AMNEngineering/amn-devops
+/tests/                      @AMNEngineering/amn-devops
+/client/                     @AMNEngineering/amn-devops
+/identity/                   @AMNEngineering/amn-devops
+/test-harness/               @AMNEngineering/amn-devops
+/Run-Tests.ps1               @AMNEngineering/amn-devops
