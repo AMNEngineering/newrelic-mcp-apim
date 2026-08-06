@@ -7,7 +7,7 @@ CHECK_ONLY=0
 FORCE=0
 ENV_NAME="dev"
 NR_MCP_APP_ID="api://709bbe94-f759-422f-b7fa-28f1fde28ae1"
-ASSET_REF="3a4e3ddd184f7b9fae6f29328b04ee4932002256"
+ASSET_REF="2bb4f81a3fa83d10143280925395b6c4a9685dc1"
 RAW_BASE="https://raw.githubusercontent.com/AMNEngineering/newrelic-mcp-apim/${ASSET_REF}/client/copilot"
 
 info() { printf '  %s\n' "$*"; }

@@ -71,7 +71,7 @@ function Assert-AssetHash([string]$Path, [string]$Name, [hashtable]$ExpectedHash
 }
 
 $nrMcpAppId = 'api://709bbe94-f759-422f-b7fa-28f1fde28ae1'
-$assetRef = '3a4e3ddd184f7b9fae6f29328b04ee4932002256'
+$assetRef = '2bb4f81a3fa83d10143280925395b6c4a9685dc1'
 $rawBase = "https://raw.githubusercontent.com/AMNEngineering/newrelic-mcp-apim/$assetRef/client/copilot"
 $expectedHashes = @{
     'bridge.mjs' = '9aebe36f9e378a97238828b2044d929e7e61b420a51277e9ed24a3429ad02cc9'
