@@ -1,14 +1,14 @@
 # New Relic MCP behind APIM
 
 > **Un-deprecated 2026-07-30.** This is the **default** New Relic MCP install
-> path for AMN engineers on the APIM Claude Code client. See
+> path for AMN engineers on APIM-backed Claude and GitHub Copilot clients. See
 > [`DEPRECATION.md`](DEPRECATION.md) for the status history. The 2026-07-29
 > soft-deprecation was reversed after clarification that most AMN users continue
 > to route Claude Code through APIM and centralized KV-key custody is preferred
 > over per-user OAuth for that population. Client-side install lives in
 > [`client/`](client/); server-side infrastructure below.
 
-APIM gateway that fronts New Relic's hosted MCP server so Claude Code developers
+APIM gateway that fronts New Relic's hosted MCP server so AI-assisted developers
 authenticate with Entra ID and **never hold the New Relic key** — APIM injects it
 server-side. This moves the New Relic key off laptops into central Key Vault
 custody and governs the MCP (tool) data plane the same way the Claude Code model
@@ -29,7 +29,7 @@ Rides the shared **AI-API-RR** edge route (`/ai/*`) per the AMN EdgeTopology
 standard — see [`docs/topology.md`](docs/topology.md).
 
 ```
-MCP client (Claude Code, VS Code, ...)
+MCP client (Claude Code, Copilot CLI/App, VS Code, ...)
   │  GET https://api.{env}.amnhealthcare.io/ai/new-relic-mcp/{env}
   │  Authorization: Bearer <Entra JWT>   (aud = NR MCP app; member of the NR MCP AD group)
   ▼
@@ -93,7 +93,7 @@ The token is an Entra bearer for the dedicated New Relic MCP app `api://<app-id>
 (same acquisition pattern as the model gateway). The `NEW_RELIC_API_KEY` env var
 can be dropped from developer setup entirely.
 
-**Connecting any MCP client** (Claude Code, VS Code, Copilot Studio, curl) — see
+**Connecting any MCP client** (Claude Code, Copilot CLI/App, VS Code, Copilot Studio, curl) — see
 [`docs/CONNECT-MCP-CLIENT.md`](docs/CONNECT-MCP-CLIENT.md) for endpoint URLs, token
 acquisition, the access-group requirement, and per-client config snippets.
 

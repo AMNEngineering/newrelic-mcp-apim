@@ -73,19 +73,48 @@ selection (`--env=dev|int`), uninstall instructions, and troubleshooting.
 }
 ```
 
+### GitHub Copilot CLI and App (`~/.copilot/mcp-config.json`)
+
+Copilot has no `headersHelper` field, so do not put an expiring Entra bearer in
+its static `headers` object. Use the Copilot installer, which installs a local
+stdio bridge that obtains and refreshes the bearer through Azure CLI:
+
+```bash
+# macOS/Linux
+curl -fsSL https://raw.githubusercontent.com/AMNEngineering/newrelic-mcp-apim/master/client/install-copilot.sh | bash
+
+# Windows PowerShell
+iwr -useb https://raw.githubusercontent.com/AMNEngineering/newrelic-mcp-apim/master/client/install-copilot.ps1 | iex
+```
+
+The resulting `mcpServers.newrelic` entry uses `node` to launch the installed
+bridge. GitHub Copilot App and VS Code Agent Host consume the same Copilot CLI
+user MCP configuration. See [`../client/README.md`](../client/README.md) for
+IDE coverage and check-only/environment options.
+
 ### VS Code (`.vscode/mcp.json`)
 
 ```jsonc
 {
   "servers": {
     "newrelic": {
-      "type": "http",
-      "url": "https://api.dev.amnhealthcare.io/ai/new-relic-mcp/dev",
-      "headers": { "Authorization": "Bearer ${input:newrelic_token}" }
+      "type": "stdio",
+      "command": "/absolute/path/to/node",
+      "args": [
+        "/absolute/path/to/.copilot/servers/newrelic-apim/bridge.mjs",
+        "--url", "https://api.dev.amnhealthcare.io/ai/new-relic-mcp/dev",
+        "--audience", "api://709bbe94-f759-422f-b7fa-28f1fde28ae1",
+        "--az-path", "/absolute/path/to/az"
+      ]
     }
   }
 }
 ```
+
+VS Code Agent Host reads `~/.copilot/mcp-config.json` directly, so no separate
+file is needed there. Use this explicit stdio form only for the traditional VS
+Code extension host. Static bearer headers expire and are not supported by the
+installer.
 
 ### Copilot Studio / Power Automate
 

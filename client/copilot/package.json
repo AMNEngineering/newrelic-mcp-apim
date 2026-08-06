@@ -1,0 +1,13 @@
+{
+  "name": "@amn/newrelic-mcp-apim-copilot-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "cross-spawn": "7.0.6"
+  }
+}
