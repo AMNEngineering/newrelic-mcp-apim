@@ -63,12 +63,28 @@ function Get-RequiredCommand([string]$Name) {
     return $command.Source
 }
 
+function Assert-AssetHash([string]$Path, [string]$Name, [hashtable]$ExpectedHashes) {
+    $actual = (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -ne $ExpectedHashes[$Name]) {
+        throw "Checksum verification failed for $Name."
+    }
+}
+
 $nrMcpAppId = 'api://709bbe94-f759-422f-b7fa-28f1fde28ae1'
-$rawBase = 'https://raw.githubusercontent.com/AMNEngineering/newrelic-mcp-apim/master/client/copilot'
+$assetRef = '3a4e3ddd184f7b9fae6f29328b04ee4932002256'
+$rawBase = "https://raw.githubusercontent.com/AMNEngineering/newrelic-mcp-apim/$assetRef/client/copilot"
+$expectedHashes = @{
+    'bridge.mjs' = '9aebe36f9e378a97238828b2044d929e7e61b420a51277e9ed24a3429ad02cc9'
+    'auth.mjs' = 'ffc4c24921c446099873363f09f75fc080e1f4a8b27d1cf707df3ddb7b6da4e2'
+    'azure-cli.mjs' = '5dab75efa0d631ff9b03b3dcc55546b48899b06c92c56d90391e275e90054833'
+    'package.json' = 'd970c21eed2ffdd38a3b177bc53febb64bcdf1021c46c631597ad0f966f2fee9'
+    'package-lock.copilot' = '5678872d626f239d3b7ba51a16d1ca1ae7e207d9cfdcf0912104d0e0fc1099f4'
+}
 $mcpUrl = "https://api.$Env.amnhealthcare.io/ai/new-relic-mcp/$Env"
 $azPath = Get-RequiredCommand 'az'
 $nodePath = Get-RequiredCommand 'node'
-$npmPath = Get-RequiredCommand 'npm'
+$npmCommand = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { 'npm.cmd' } else { 'npm' }
+$npmPath = Get-RequiredCommand $npmCommand
 
 $nodeMajor = [int]((& $nodePath -p 'Number(process.versions.node.split(".")[0])').Trim())
 if ($nodeMajor -lt 20) {
@@ -184,6 +200,7 @@ try {
 
     if ($hasLocalAssets) {
         foreach ($asset in $assets) {
+            Assert-AssetHash -Path (Join-Path $sourceDir $asset) -Name $asset -ExpectedHashes $expectedHashes
             $destinationName = if ($asset -eq 'package-lock.copilot') { 'package-lock.json' } else { $asset }
             Copy-Item -Path (Join-Path $sourceDir $asset) -Destination (Join-Path $stagingDir $destinationName) -Force
         }
@@ -192,6 +209,7 @@ try {
         New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
         foreach ($asset in $assets) {
             Invoke-WebRequest -UseBasicParsing -Uri "$rawBase/$asset" -OutFile (Join-Path $tempDir $asset)
+            Assert-AssetHash -Path (Join-Path $tempDir $asset) -Name $asset -ExpectedHashes $expectedHashes
             $destinationName = if ($asset -eq 'package-lock.copilot') { 'package-lock.json' } else { $asset }
             Copy-Item -Path (Join-Path $tempDir $asset) -Destination (Join-Path $stagingDir $destinationName) -Force
         }

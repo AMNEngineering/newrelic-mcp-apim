@@ -7,12 +7,37 @@ CHECK_ONLY=0
 FORCE=0
 ENV_NAME="dev"
 NR_MCP_APP_ID="api://709bbe94-f759-422f-b7fa-28f1fde28ae1"
-RAW_BASE="https://raw.githubusercontent.com/AMNEngineering/newrelic-mcp-apim/master/client/copilot"
+ASSET_REF="3a4e3ddd184f7b9fae6f29328b04ee4932002256"
+RAW_BASE="https://raw.githubusercontent.com/AMNEngineering/newrelic-mcp-apim/${ASSET_REF}/client/copilot"
 
 info() { printf '  %s\n' "$*"; }
 ok() { printf '[ok] %s\n' "$*"; }
 warn() { printf '[warn] %s\n' "$*" >&2; }
 fail() { printf '[error] %s\n' "$*" >&2; }
+
+expected_hash() {
+  case "$1" in
+    bridge.mjs) printf '%s' '9aebe36f9e378a97238828b2044d929e7e61b420a51277e9ed24a3429ad02cc9' ;;
+    auth.mjs) printf '%s' 'ffc4c24921c446099873363f09f75fc080e1f4a8b27d1cf707df3ddb7b6da4e2' ;;
+    azure-cli.mjs) printf '%s' '5dab75efa0d631ff9b03b3dcc55546b48899b06c92c56d90391e275e90054833' ;;
+    package.json) printf '%s' 'd970c21eed2ffdd38a3b177bc53febb64bcdf1021c46c631597ad0f966f2fee9' ;;
+    package-lock.copilot) printf '%s' '5678872d626f239d3b7ba51a16d1ca1ae7e207d9cfdcf0912104d0e0fc1099f4' ;;
+    *) fail "No checksum is registered for $1."; exit 1 ;;
+  esac
+}
+
+verify_asset() {
+  local path=$1
+  local name=$2
+  local expected
+  local actual
+  expected=$(expected_hash "$name")
+  actual=$("$NODE_PATH" -e 'const fs=require("fs"),crypto=require("crypto");process.stdout.write(crypto.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"))' "$path")
+  if [[ "$actual" != "$expected" ]]; then
+    fail "Checksum verification failed for $name."
+    exit 1
+  fi
+}
 
 usage() {
   cat <<'HELP'
@@ -191,6 +216,9 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ -n "$SOURCE_DIR" && -f "${SOURCE_DIR}/bridge.mjs" && -f "${SOURCE_DIR}/auth.mjs" && -f "${SOURCE_DIR}/azure-cli.mjs" && -f "${SOURCE_DIR}/package.json" && -f "${SOURCE_DIR}/package-lock.copilot" ]]; then
+  for asset in bridge.mjs auth.mjs azure-cli.mjs package.json package-lock.copilot; do
+    verify_asset "${SOURCE_DIR}/${asset}" "$asset"
+  done
   cp "${SOURCE_DIR}/bridge.mjs" "${SOURCE_DIR}/auth.mjs" "${SOURCE_DIR}/azure-cli.mjs" "${SOURCE_DIR}/package.json" "$STAGING_DIR/"
   cp "${SOURCE_DIR}/package-lock.copilot" "${STAGING_DIR}/package-lock.json"
 else
@@ -201,6 +229,7 @@ else
   TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/newrelic-copilot.XXXXXX")
   for asset in bridge.mjs auth.mjs azure-cli.mjs package.json package-lock.copilot; do
     curl -fsSL "${RAW_BASE}/${asset}" -o "${TEMP_DIR}/${asset}"
+    verify_asset "${TEMP_DIR}/${asset}" "$asset"
   done
   cp "${TEMP_DIR}/bridge.mjs" "${TEMP_DIR}/auth.mjs" "${TEMP_DIR}/azure-cli.mjs" "${TEMP_DIR}/package.json" "$STAGING_DIR/"
   cp "${TEMP_DIR}/package-lock.copilot" "${STAGING_DIR}/package-lock.json"
